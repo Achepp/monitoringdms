@@ -680,8 +680,25 @@
     const StatusChartMenu = React.memo(({ data, onRefresh, isLoading, isDarkMode }) => {
       const [filterGrp, setFilterGrp] = useState('');
       const [filterStatus, setFilterStatus] = useState('');
+      const [filterMonth, setFilterMonth] = useState('');
+      const [filterYear, setFilterYear] = useState('');
       const [startDate, setStartDate] = useState('');
       const [endDate, setEndDate] = useState('');
+
+      const availableYears = useMemo(() => {
+        const yearsSet = new Set();
+        data.forEach(row => {
+          if (row.tanggal) {
+            const year = row.tanggal.split('-')[0];
+            if (year) yearsSet.add(year);
+          }
+        });
+        const years = Array.from(yearsSet).sort((a, b) => b - a);
+        if (years.length === 0) {
+          years.push(new Date().getFullYear().toString());
+        }
+        return years;
+      }, [data]);
 
       const filteredRawData = useMemo(() => {
         return data.filter(row => {
@@ -693,9 +710,20 @@
           } else if (endDate) {
             matchDate = row.tanggal <= endDate;
           }
+
+          if (row.tanggal) {
+            const parts = row.tanggal.split('-');
+            const year = parts[0];
+            const month = parts[1];
+            if (filterYear && year !== filterYear) matchDate = false;
+            if (filterMonth && month !== filterMonth) matchDate = false;
+          } else if (filterYear || filterMonth) {
+            matchDate = false;
+          }
+
           return matchDate;
         });
-      }, [data, startDate, endDate]);
+      }, [data, startDate, endDate, filterMonth, filterYear]);
 
       const chartData = useMemo(() => {
         const groupsToProcess = filterGrp ? [filterGrp] : GROUP_PROSES;
@@ -747,6 +775,8 @@
       const resetFilters = () => {
         setFilterGrp('');
         setFilterStatus('');
+        setFilterMonth('');
+        setFilterYear('');
         setStartDate('');
         setEndDate('');
       };
@@ -761,14 +791,59 @@
             
             <div className="bg-slate-50/80 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-end gap-3 lg:gap-4 transition-colors">
               
+              {/* Filter Bulan */}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Bulan</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select 
+                    value={filterMonth} 
+                    onChange={e => {
+                      setFilterMonth(e.target.value);
+                      if (e.target.value) {
+                        setStartDate('');
+                        setEndDate('');
+                      }
+                    }} 
+                    className="w-[135px] sm:w-[145px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
+                  >
+                    <option value="">Semua Bulan</option>
+                    {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+              </div>
+
+              {/* Filter Tahun */}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Tahun</label>
+                <div className="relative">
+                  <select 
+                    value={filterYear} 
+                    onChange={e => {
+                      setFilterYear(e.target.value);
+                      if (e.target.value) {
+                        setStartDate('');
+                        setEndDate('');
+                      }
+                    }} 
+                    className="w-[110px] sm:w-[120px] px-3 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
+                  >
+                    <option value="">Semua Tahun</option>
+                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+              </div>
+
               {/* Filter Tanggal */}
               <div className="flex flex-col">
                 <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Rentang Tanggal</label>
                 <div className="flex items-center gap-1.5 sm:gap-2">
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} 
+                  <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
                          className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                   <span className="text-slate-400 font-bold">-</span>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} 
+                  <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
                          className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                 </div>
               </div>
