@@ -484,6 +484,12 @@
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
       };
 
+      const legendFormatter = (value) => (
+        <span style={{ color: isDarkMode ? '#cbd5e1' : '#334155', fontWeight: 600, fontSize: '12px' }}>
+          {value}
+        </span>
+      );
+
       return (
         <div className="space-y-6 transition-colors duration-300">
           
@@ -626,7 +632,7 @@
                              tickFormatter={(val) => { const d = new Date(val); return isNaN(d.getTime()) ? val : d.toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}} />
                       <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
                       <RechartsTooltip contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
-                      <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                      <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} formatter={legendFormatter} />
                       <Line type="monotone" dataKey="Produksi" name="Proses Produksi" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
                       <Line type="monotone" dataKey="Selesai" name="Selesai Kemas" stroke="#10b981" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
                     </LineChart>
@@ -677,7 +683,7 @@
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
                     <RechartsTooltip cursor={{fill: cursorColor}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
-                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} formatter={legendFormatter} />
                     <Bar dataKey="Produksi" name="Proses Produksi" fill="#3b82f6" radius={[4,4,0,0]} maxBarSize={50} />
                     <Bar dataKey="Pending" name="Total Pending" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={50} />
                   </BarChart>
@@ -746,6 +752,12 @@
         borderRadius: '8px', 
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
       };
+
+      const legendFormatter = (value) => (
+        <span style={{ color: isDarkMode ? '#cbd5e1' : '#334155', fontWeight: 600, fontSize: '12px' }}>
+          {value}
+        </span>
+      );
 
       const visibleFields = filterStatus 
         ? STATUS_FIELDS.filter(f => f.id === filterStatus) 
@@ -831,7 +843,7 @@
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={15} />
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
                   <RechartsTooltip cursor={{fill: cursorColor}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
-                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} formatter={legendFormatter} />
                   
                   {visibleFields.map((field) => {
                     const colorIndex = STATUS_FIELDS.findIndex(f => f.id === field.id);
@@ -1103,10 +1115,7 @@
           const saved = localStorage.getItem('theme');
           if (saved !== null) return saved === 'dark';
         } catch(e) {}
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-          return true;
-        }
-        return false;
+        return false; // Default: Mode Light aktif saat aplikasi dibuka
       });
 
       const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -1247,13 +1256,36 @@
                   </button>
                 </div>
 
-                <button 
-                  type="button"
-                  onClick={() => setIsDarkMode(!isDarkMode)}
-                  className="p-2 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0"
-                >
-                  {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
+                {/* Theme Switcher Pill Toggle */}
+                <div className="bg-slate-100 dark:bg-slate-700/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200 dark:border-slate-600">
+                  <button 
+                    type="button"
+                    onClick={() => setIsDarkMode(false)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      !isDarkMode 
+                        ? 'bg-white text-amber-600 shadow-sm border border-slate-200/80' 
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                    title="Aktifkan Mode Light"
+                  >
+                    <Sun size={14} className={!isDarkMode ? "text-amber-500 fill-amber-500" : ""} />
+                    <span>Light</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => setIsDarkMode(true)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      isDarkMode 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                    title="Aktifkan Mode Dark"
+                  >
+                    <Moon size={14} className={isDarkMode ? "fill-white" : ""} />
+                    <span>Dark</span>
+                  </button>
+                </div>
 
                 <div className="flex items-center gap-3 border-l border-slate-200 dark:border-slate-700 pl-3 sm:pl-4 transition-colors">
                   <div className="hidden sm:flex flex-col items-end">
