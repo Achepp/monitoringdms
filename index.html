@@ -476,19 +476,21 @@
       const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
       const cursorColor = isDarkMode ? '#334155' : '#f8fafc';
 
-      const tooltipStyle = {
+      const tooltipStyle = useMemo(() => ({
         backgroundColor: tooltipBg,
         borderColor: tooltipBorder,
         color: tooltipText,
         borderRadius: '8px', 
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-      };
+      }), [tooltipBg, tooltipBorder, tooltipText]);
 
-      const legendFormatter = (value) => (
+      const tooltipItemStyle = useMemo(() => ({ color: tooltipText }), [tooltipText]);
+
+      const legendFormatter = useCallback((value) => (
         <span style={{ color: isDarkMode ? '#cbd5e1' : '#334155', fontWeight: 600, fontSize: '12px' }}>
           {value}
         </span>
-      );
+      ), [isDarkMode]);
 
       return (
         <div className="space-y-6 transition-colors duration-300">
@@ -625,13 +627,13 @@
               </div>
               <div className="flex-1 min-h-[300px] relative w-full">
                 <div className="absolute inset-0">
-                  <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                    <LineChart key={`line-${isDarkMode ? 'dark' : 'light'}`} data={chartDataTrend} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <ResponsiveContainer key={`resp-trend-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
+                    <LineChart data={chartDataTrend} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                       <XAxis dataKey="tanggal" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} 
                              tickFormatter={(val) => { const d = new Date(val); return isNaN(d.getTime()) ? val : d.toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}} />
                       <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
-                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                       <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} formatter={legendFormatter} />
                       <Line type="monotone" dataKey="Produksi" name="Proses Produksi" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
                       <Line type="monotone" dataKey="Selesai" name="Selesai Kemas" stroke="#10b981" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
@@ -646,12 +648,12 @@
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Proporsi seluruh status produksi.</p>
               <div className="h-56 relative w-full">
                 <div className="absolute inset-0">
-                  <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                    <PieChart key={`pie-${isDarkMode ? 'dark' : 'light'}`}>
+                  <ResponsiveContainer key={`resp-pie-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
+                    <PieChart>
                       <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value">
                         {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Pie>
-                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -677,12 +679,12 @@
             </div>
             <div className="h-80 relative w-full">
               <div className="absolute inset-0">
-                <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                  <BarChart key={`bar-${isDarkMode ? 'dark' : 'light'}`} data={chartDataGroup} margin={{ top: 5, right: 0, bottom: 5, left: 0 }}>
+                <ResponsiveContainer key={`resp-group-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
+                  <BarChart data={chartDataGroup} margin={{ top: 5, right: 0, bottom: 5, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
-                    <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                    <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                     <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} formatter={legendFormatter} />
                     <Bar dataKey="Produksi" name="Proses Produksi" fill="#3b82f6" radius={[4,4,0,0]} maxBarSize={50} />
                     <Bar dataKey="Pending" name="Total Pending" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={50} />
@@ -745,19 +747,21 @@
       const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
       const cursorColor = isDarkMode ? '#334155' : '#f8fafc';
 
-      const tooltipStyle = {
+      const tooltipStyle = useMemo(() => ({
         backgroundColor: tooltipBg,
         borderColor: tooltipBorder,
         color: tooltipText,
         borderRadius: '8px', 
         boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-      };
+      }), [tooltipBg, tooltipBorder, tooltipText]);
 
-      const legendFormatter = (value) => (
+      const tooltipItemStyle = useMemo(() => ({ color: tooltipText }), [tooltipText]);
+
+      const legendFormatter = useCallback((value) => (
         <span style={{ color: isDarkMode ? '#cbd5e1' : '#334155', fontWeight: 600, fontSize: '12px' }}>
           {value}
         </span>
-      );
+      ), [isDarkMode]);
 
       const visibleFields = filterStatus 
         ? STATUS_FIELDS.filter(f => f.id === filterStatus) 
@@ -837,12 +841,12 @@
           
           <div className="flex-1 min-h-[400px] relative w-full mt-2">
             <div className="absolute inset-0">
-              <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                <BarChart key={`status-bar-${isDarkMode ? 'dark' : 'light'}`} data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
+              <ResponsiveContainer key={`resp-status-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
+                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={15} />
                   <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
-                  <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                  <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
                   <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} formatter={legendFormatter} />
                   
                   {visibleFields.map((field) => {
@@ -1306,12 +1310,12 @@
               
               {activeMenu === 'dashboard' && (
                 isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
-                          : <AdminDashboard data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} onSwitchToKaru={() => handleSwitchRole('KARU')} isDarkMode={isDarkMode} />
+                          : <AdminDashboard key={`admin-dash-${isDarkMode ? 'dark' : 'light'}`} data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} onSwitchToKaru={() => handleSwitchRole('KARU')} isDarkMode={isDarkMode} />
               )}
 
               {activeMenu === 'status-chart' && (
                 isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
-                          : <StatusChartMenu data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} isDarkMode={isDarkMode} />
+                          : <StatusChartMenu key={`status-menu-${isDarkMode ? 'dark' : 'light'}`} data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} isDarkMode={isDarkMode} />
               )}
 
               {activeMenu === 'table' && (
