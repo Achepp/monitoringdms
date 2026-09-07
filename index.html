@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ProdMonitor - Monitoring Produksi</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class', 
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f8fafc;
+      transition: background-color 0.3s ease;
+    }
+    body.dark {
+      background-color: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
+
+    /* CSS Variables Khusus untuk Recharts agar ganti tema tidak memicu Render Ulang di JS */
+    :root {
+      --chart-axis: #64748b;
+      --chart-grid: #e2e8f0;
+      --chart-tooltip-bg: #ffffff;
+      --chart-tooltip-border: #e2e8f0;
+      --chart-tooltip-text: #0f172a;
+      --chart-cursor: #f8fafc;
+    }
+    html.dark, .dark {
+      --chart-axis: #94a3b8;
+      --chart-grid: #334155;
+      --chart-tooltip-bg: #1e293b;
+      --chart-tooltip-border: #334155;
+      --chart-tooltip-text: #f8fafc;
+      --chart-cursor: #334155;
+    }
+  </style>
+
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <script>window.react = window.React;</script>
+
+  <!-- Babel untuk kompilasi JSX langsung di browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Recharts Dependencies -->
+  <script crossorigin src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+  <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide-react@0.292.0/dist/umd/lucide-react.js"></script>
+
+  <!-- FIX NATIVE: Mencegah ResizeObserver Error Secara Global di Level Browser -->
+  <script>
+    window.addEventListener('error', function(e) {
+      if (e.message && e.message.includes('ResizeObserver')) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    });
+
+    if (typeof window !== 'undefined' && window.ResizeObserver) {
+      const _ResizeObserver = window.ResizeObserver;
+      window.ResizeObserver = class ResizeObserver extends _ResizeObserver {
+        constructor(callback) {
+          super((entries, observer) => {
+            window.requestAnimationFrame(() => {
+              try { callback(entries, observer); } catch(e) {}
+            });
+          });
+        }
+      };
+    }
+  </script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+    const { 
+      BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, Legend, ResponsiveContainer,
+      PieChart, Pie, Cell, LineChart, Line
+    } = window.Recharts;
+    
+    const Lucide = window.lucideReact || window.lucide || window.LucideReact;
+    const { 
+      LayoutDashboard, ClipboardList, Database, LogOut, Search, Filter, 
+      Download, CheckCircle, AlertCircle, Loader2, Menu, X,
+      Activity, Clock, Package, AlertTriangle, ChevronLeft, ChevronRight, Inbox,
+      Sun, Moon, BarChart2, RefreshCw, ChevronDown, Calendar
+    } = Lucide;
+
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzfqf9QKzH-OUMX5RIJ-Nzy54DXmO9lNowKXXxxRDgf1XSbk8jGCvAyPddOGwC-t1ks/exec"; 
+
+    const GROUP_PROSES = ["Aerosol", "Epoxy", "Melamine", "Politur", "Thinner", "Waterbased", "Wood filler", "Utility"];
+    const SHIFTS = ["Pagi", "Siang"];
+    const MONTHS = [
+      { value: '01', label: 'Januari' },
+      { value: '02', label: 'Februari' },
+      { value: '03', label: 'Maret' },
+      { value: '04', label: 'April' },
+      { value: '05', label: 'Mei' },
+      { value: '06', label: 'Juni' },
+      { value: '07', label: 'Juli' },
+      { value: '08', label: 'Agustus' },
+      { value: '09', label: 'September' },
+      { value: '10', label: 'Oktober' },
+      { value: '11', label: 'November' },
+      { value: '12', label: 'Desember' }
+    ];
+    const STATUS_FIELDS = [
+      { id: 'proses_produksi', label: 'Proses Produksi' },
+      { id: 'pending_produksi', label: 'Pending Produksi' },
+      { id: 'proses_kemas', label: 'Proses Kemas' },
+      { id: 'pending_kemas', label: 'Pending Kemas' },
+      { id: 'selesai_kemas', label: 'Selesai Kemas' },
+      { id: 'tk', label: 'TK' },
+      { id: 'wash', label: 'Wash' },
+      { id: 'dirty', label: 'Dirty' }
+    ];
+    const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#64748b', '#ec4899'];
+
+    const generateMockData = () => {
+      const data = [];
+      const today = new Date();
+      for(let i=0; i<50; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - Math.floor(Math.random() * 30));
+        const pProd = Math.floor(Math.random() * 50);
+        data.push({
+          id: i,
+          timestamp: d.toISOString(),
+          tanggal: d.toISOString().split('T')[0],
+          group_proses: GROUP_PROSES[Math.floor(Math.random() * GROUP_PROSES.length)],
+          shift: SHIFTS[Math.floor(Math.random() * SHIFTS.length)],
+          proses_produksi: Math.floor(Math.random() * 100),
+          pending_produksi: pProd,
+          pending_proses: pProd,
+          proses_kemas: Math.floor(Math.random() * 80),
+          pending_kemas: Math.floor(Math.random() * 30),
+          selesai_kemas: Math.floor(Math.random() * 90),
+          tk: Math.floor(Math.random() * 20),
+          wash: Math.floor(Math.random() * 10),
+          dirty: Math.floor(Math.random() * 5)
+        });
+      }
+      return data;
+    };
+
+    let MOCK_DB = generateMockData();
+
+    const apiService = {
+      fetchData: async () => {
+        let rawData = [];
+        if (GAS_URL) {
+          const res = await fetch(`${GAS_URL}?action=getData`);
+          const json = await res.json();
+          if (json.status === 'success') {
+            rawData = json.data || [];
+          }
+        } else {
+          rawData = MOCK_DB;
+        }
+
+        const normalizedData = rawData.map(row => {
+          const pendingProdVal = row.pending_produksi !== undefined 
+            ? Number(row.pending_produksi || 0) 
+            : Number(row.pending_proses || 0);
+          
+          const tkVal = row.tk !== undefined ? Number(row.tk || 0) : Number(row.tk_ || 0);
+          const washVal = row.wash !== undefined ? Number(row.wash || 0) : Number(row.wash_ || 0);
+
+          return {
+            ...row,
+            pending_produksi: pendingProdVal,
+            pending_proses: pendingProdVal,
+            tk: tkVal,
+            tk_: tkVal,
+            wash: washVal,
+            wash_: washVal
+          };
+        });
+
+        return { status: 'success', data: normalizedData };
+      },
+      saveData: async (payload) => {
+        const pProd = payload.pending_produksi !== undefined ? payload.pending_produksi : (payload.pending_proses || 0);
+        const normalizedPayload = {
+          ...payload,
+          pending_produksi: pProd,
+          pending_proses: pProd
+        };
+        if (GAS_URL) {
+          const res = await fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'addData', data: normalizedPayload })
+          });
+          return res.json();
+        }
+        return new Promise(resolve => setTimeout(() => {
+          MOCK_DB.unshift({ ...normalizedPayload, timestamp: new Date().toISOString(), id: Date.now() });
+          resolve({ status: 'success' });
+        }, 1000));
+      }
+    };
+
+    const KaruForm = React.memo(({ onSuccess }) => {
+      const [formData, setFormData] = useState({
+        tanggal: new Date().toISOString().split('T')[0],
+        group_proses: '',
+        shift: '',
+        proses_produksi: 0, pending_produksi: 0, pending_proses: 0, proses_kemas: 0, pending_kemas: 0,
+        selesai_kemas: 0, tk: 0, wash: 0, dirty: 0
+      });
+      const [loading, setLoading] = useState(false);
+      const [toast, setToast] = useState(null);
+
+      const handleChange = (e) => {
+        const { name, value, type } = e.target;
+        let val = value;
+        if (type === 'number') {
+          val = parseInt(value) || 0;
+          if (val < 0) val = 0; 
+        }
+        setFormData(prev => ({ ...prev, [name]: val }));
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+          await apiService.saveData(formData);
+          setToast({ type: 'success', message: 'Data berhasil disimpan ke sistem!' });
+          onSuccess();
+          const resetNumbers = {};
+          STATUS_FIELDS.forEach(f => resetNumbers[f.id] = 0);
+          setFormData(prev => ({ ...prev, ...resetNumbers }));
+          setTimeout(() => setToast(null), 3000);
+        } catch (error) {
+          setToast({ type: 'error', message: 'Gagal menyimpan data.' });
+        }
+        setLoading(false);
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden transition-colors">
+          <div className="bg-blue-600 dark:bg-blue-700 p-6 text-white transition-colors">
+            <h2 className="text-2xl font-bold">Input Data Produksi</h2>
+            <p className="text-blue-100 text-sm mt-1">Formulir laporan harian status proses produksi dan kemas.</p>
+          </div>
+
+          {toast && (
+            <div className={`p-4 m-6 rounded-lg flex items-center gap-3 ${toast.type === 'success' ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400'}`}>
+              {toast.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+              <span>{toast.message}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Tanggal</label>
+                <input type="date" name="tanggal" required value={formData.tanggal} onChange={handleChange} 
+                       className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Group Proses</label>
+                <select name="group_proses" required value={formData.group_proses} onChange={handleChange}
+                        className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                  <option value="" disabled>Pilih Group...</option>
+                  {GROUP_PROSES.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Shift</label>
+                <select name="shift" required value={formData.shift} onChange={handleChange}
+                        className="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                  <option value="" disabled>Pilih Shift...</option>
+                  {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <hr className="border-slate-100 dark:border-slate-700 transition-colors" />
+
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Detail Status Proses (Qty)</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                {STATUS_FIELDS.map(field => (
+                  <div key={field.id} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-xl border border-slate-100 dark:border-slate-600/50 transition-colors">
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">{field.label}</label>
+                    <input type="number" name={field.id} min="0" required value={formData[field.id]} onChange={handleChange}
+                           className="w-full px-4 py-2 text-lg font-semibold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <button type="submit" disabled={loading}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold shadow-sm transition-colors flex items-center gap-2">
+                {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
+                {loading ? 'Menyimpan...' : 'Submit Data'}
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    });
+
+    const AdminDashboard = React.memo(({ data, sidebarOpen, onRefresh, isLoading, onSwitchToKaru, isDarkMode }) => {
+      const [filterMonth, setFilterMonth] = useState('');
+      const [filterYear, setFilterYear] = useState('');
+
+      const availableYears = useMemo(() => {
+        const yearsSet = new Set();
+        data.forEach(row => {
+          if (row.tanggal) {
+            const year = row.tanggal.split('-')[0];
+            if (year) yearsSet.add(year);
+          }
+        });
+        const years = Array.from(yearsSet).sort((a, b) => b - a);
+        if (years.length === 0) {
+          years.push(new Date().getFullYear().toString());
+        }
+        return years;
+      }, [data]);
+
+      const filteredData = useMemo(() => {
+        return data.filter(row => {
+          if (!row.tanggal) return true;
+          const parts = row.tanggal.split('-');
+          const year = parts[0];
+          const month = parts[1];
+
+          if (filterYear && year !== filterYear) return false;
+          if (filterMonth && month !== filterMonth) return false;
+
+          return true;
+        });
+      }, [data, filterMonth, filterYear]);
+
+      const summary = useMemo(() => {
+        let totals = {
+          prosesProduksi: 0,
+          pendingProduksi: 0,
+          prosesKemas: 0,
+          pendingKemas: 0,
+          selesaiKemas: 0
+        };
+        filteredData.forEach(row => {
+          totals.prosesProduksi += Number(row.proses_produksi || 0);
+          totals.pendingProduksi += Number(row.pending_produksi !== undefined ? row.pending_produksi : (row.pending_proses || 0));
+          totals.prosesKemas += Number(row.proses_kemas || 0);
+          totals.pendingKemas += Number(row.pending_kemas || 0);
+          totals.selesaiKemas += Number(row.selesai_kemas || 0);
+        });
+        return totals;
+      }, [filteredData]);
+
+      const chartDataGroup = useMemo(() => {
+        const groups = {};
+        filteredData.forEach(row => {
+          if(!groups[row.group_proses]) groups[row.group_proses] = { name: row.group_proses, Produksi: 0, Pending: 0 };
+          groups[row.group_proses].Produksi += Number(row.proses_produksi || 0);
+          const pendingProdVal = Number(row.pending_produksi !== undefined ? row.pending_produksi : (row.pending_proses || 0));
+          groups[row.group_proses].Pending += pendingProdVal + Number(row.pending_kemas || 0);
+        });
+        return Object.values(groups);
+      }, [filteredData]);
+
+      const now = new Date();
+      const currentYearStr = now.getFullYear().toString();
+      const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
+      const currentMonthObj = MONTHS.find(m => m.value === currentMonthStr);
+      const currentMonthName = currentMonthObj ? currentMonthObj.label : '';
+
+      const chartDataTrend = useMemo(() => {
+        let trendSource = filteredData;
+
+        // Tanpa filter: Tampilkan HANYA data bulan berjalan (current month)
+        if (!filterMonth && !filterYear) {
+          trendSource = data.filter(row => {
+            if (!row.tanggal) return false;
+            const parts = row.tanggal.split('-');
+            const year = parts[0];
+            const month = parts[1];
+            return year === currentYearStr && month === currentMonthStr;
+          });
+
+          // If no data yet in current month, fallback to filteredData
+          if (trendSource.length === 0 && data.length > 0) {
+            trendSource = filteredData;
+          }
+        }
+
+        const dates = {};
+        trendSource.forEach(row => {
+          if (!dates[row.tanggal]) dates[row.tanggal] = { tanggal: row.tanggal, Produksi: 0, Selesai: 0 };
+          dates[row.tanggal].Produksi += Number(row.proses_produksi || 0);
+          dates[row.tanggal].Selesai += Number(row.selesai_kemas || 0);
+        });
+        const sorted = Object.values(dates).sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+        return sorted;
+      }, [data, filteredData, filterMonth, filterYear, currentYearStr, currentMonthStr]);
+
+      const pieData = useMemo(() => {
+        const totals = STATUS_FIELDS.map((f, i) => ({ 
+          name: f.label, 
+          value: 0,
+          color: COLORS[i % COLORS.length]
+        }));
+        filteredData.forEach(row => {
+          STATUS_FIELDS.forEach((f, i) => { totals[i].value += (row[f.id] || 0); });
+        });
+        return totals.filter(t => t.value > 0);
+      }, [filteredData]);
+
+      const resetFilters = () => {
+        setFilterMonth('');
+        setFilterYear('');
+      };
+
+      const selectedMonthObj = MONTHS.find(m => m.value === filterMonth);
+      const selectedMonthLabel = selectedMonthObj ? selectedMonthObj.label : '';
+      const filterActiveText = (filterMonth || filterYear) 
+        ? `${selectedMonthLabel} ${filterYear}`.trim()
+        : 'Semua Periode';
+
+      const StatCard = ({ title, value, icon: Icon, colorClass, bgClass, darkBgClass }) => (
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
+          <div className={`p-3 rounded-full ${bgClass} ${darkBgClass} ${colorClass} shrink-0`}>
+            {Icon && <Icon size={24} />}
+          </div>
+          <div className="overflow-hidden">
+            <h4 className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-semibold mb-0.5 truncate">{title}</h4>
+            <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{value.toLocaleString()}</p>
+          </div>
+        </div>
+      );
+
+      // Warna Recharts berbasis JS Hex murni untuk mencegah exception di Recharts color parser
+      const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
+      const tooltipBorder = isDarkMode ? '#334155' : '#e2e8f0';
+      const tooltipText = isDarkMode ? '#f8fafc' : '#0f172a';
+      const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
+      const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
+      const cursorColor = isDarkMode ? '#334155' : '#f8fafc';
+
+      const tooltipStyle = {
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        color: tooltipText,
+        borderRadius: '8px', 
+        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+      };
+
+      return (
+        <div className="space-y-6 transition-colors duration-300">
+          
+          {/* Header Filter Bar Dashboard */}
+          <div className="bg-white dark:bg-slate-800 p-4 md:p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-colors">
+            
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100 font-bold text-sm sm:text-base mr-1">
+                <Calendar size={18} className="text-blue-600 dark:text-blue-400" />
+                <span>Filter Bulan:</span>
+              </div>
+
+              {/* Select Bulan */}
+              <div className="relative">
+                <select 
+                  value={filterMonth} 
+                  onChange={e => setFilterMonth(e.target.value)}
+                  className="pl-3 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all cursor-pointer shadow-sm"
+                >
+                  <option value="">Semua Bulan</option>
+                  {MONTHS.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+              </div>
+
+              {/* Select Tahun */}
+              <div className="relative">
+                <select 
+                  value={filterYear} 
+                  onChange={e => setFilterYear(e.target.value)}
+                  className="pl-3 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none appearance-none transition-all cursor-pointer shadow-sm"
+                >
+                  <option value="">Semua Tahun</option>
+                  {availableYears.map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+              </div>
+
+              {/* Input Month Picker */}
+              <div className="relative hidden lg:block">
+                <input 
+                  type="month"
+                  value={filterMonth && filterYear ? `${filterYear}-${filterMonth}` : ''}
+                  onChange={e => {
+                    if (e.target.value) {
+                      const [y, m] = e.target.value.split('-');
+                      setFilterYear(y);
+                      setFilterMonth(m);
+                    } else {
+                      setFilterMonth('');
+                      setFilterYear('');
+                    }
+                  }}
+                  className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm cursor-pointer"
+                />
+              </div>
+
+              {(filterMonth || filterYear) && (
+                <button 
+                  type="button"
+                  onClick={resetFilters}
+                  className="px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                  title="Reset Filter Bulan"
+                >
+                  <X size={14} strokeWidth={2.5} /> Reset
+                </button>
+              )}
+            </div>
+
+            {/* Badges & Actions */}
+            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100 dark:border-slate-700">
+              <div className="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                <span>{filterActiveText} ({filteredData.length} Data)</span>
+              </div>
+
+              {onSwitchToKaru && (
+                <button 
+                  type="button" 
+                  onClick={onSwitchToKaru}
+                  className="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                  title="Switch ke User Karu (Form Input)"
+                >
+                  <ClipboardList size={14} />
+                  <span className="hidden sm:inline">Mode Karu</span>
+                </button>
+              )}
+
+              {onRefresh && (
+                <button 
+                  type="button" 
+                  onClick={onRefresh} 
+                  disabled={isLoading}
+                  className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
+                  title="Refresh Data"
+                >
+                  <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {filteredData.length === 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 p-4 rounded-xl flex items-center gap-3 transition-all">
+              <AlertCircle size={20} className="shrink-0 text-amber-600 dark:text-amber-400" />
+              <div>
+                <p className="font-bold text-sm">Tidak ada data untuk periode {filterActiveText}</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">Silakan pilih bulan/tahun lain atau klik tombol Reset untuk melihat seluruh data.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <StatCard title="Proses Produksi" value={summary.prosesProduksi} icon={Activity} colorClass="text-blue-600 dark:text-blue-400" bgClass="bg-blue-50" darkBgClass="dark:bg-blue-900/20" />
+            <StatCard title="Pending Produksi" value={summary.pendingProduksi} icon={Clock} colorClass="text-amber-500 dark:text-amber-400" bgClass="bg-amber-50" darkBgClass="dark:bg-amber-900/20" />
+            <StatCard title="Proses Kemas" value={summary.prosesKemas} icon={Package} colorClass="text-indigo-600 dark:text-indigo-400" bgClass="bg-indigo-50" darkBgClass="dark:bg-indigo-900/20" />
+            <StatCard title="Pending Kemas" value={summary.pendingKemas} icon={AlertTriangle} colorClass="text-orange-500 dark:text-orange-400" bgClass="bg-orange-50" darkBgClass="dark:bg-orange-900/20" />
+            <StatCard title="Selesai Kemas" value={summary.selesaiKemas} icon={CheckCircle} colorClass="text-green-600 dark:text-green-400" bgClass="bg-green-50" darkBgClass="dark:bg-green-900/20" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col transition-colors">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  Tren Produksi & Kemas {(!filterMonth && !filterYear) ? `(Bulan Berjalan - ${currentMonthName} ${currentYearStr})` : `(${filterActiveText})`}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Perbandingan total barang diproses dan selesai dikemas per hari.</p>
+              </div>
+              <div className="flex-1 min-h-[300px] relative w-full">
+                <div className="absolute inset-0">
+                  <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                    <LineChart data={chartDataTrend} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
+                      <XAxis dataKey="tanggal" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} 
+                             tickFormatter={(val) => { const d = new Date(val); return isNaN(d.getTime()) ? val : d.toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
+                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                      <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                      <Line type="monotone" dataKey="Produksi" name="Proses Produksi" stroke="#3b82f6" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                      <Line type="monotone" dataKey="Selesai" name="Selesai Kemas" stroke="#10b981" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col transition-colors">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">Distribusi Status Global</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Proporsi seluruh status produksi.</p>
+              <div className="h-56 relative w-full">
+                <div className="absolute inset-0">
+                  <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value">
+                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                      </Pie>
+                      <RechartsTooltip contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 mt-6 max-h-36 overflow-y-auto pr-2 custom-scrollbar">
+                {pieData.sort((a,b) => b.value - a.value).map((entry) => (
+                  <div key={entry.name} className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 border-b border-slate-50 dark:border-slate-700/50 pb-2 last:border-0 last:pb-0">
+                    <div className="flex items-center">
+                      <span className="w-3 h-3 rounded-full mr-3 shadow-sm" style={{backgroundColor: entry.color}}></span>
+                      {entry.name}
+                    </div>
+                    <span className="font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-700 px-2 py-0.5 rounded">{entry.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Komparasi Produksi & Pending per Group</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Melihat beban kerja dan bottleneck (pending) pada masing-masing grup proses.</p>
+            </div>
+            <div className="h-80 relative w-full">
+              <div className="absolute inset-0">
+                <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                  <BarChart data={chartDataGroup} margin={{ top: 5, right: 0, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
+                    <RechartsTooltip cursor={{fill: cursorColor}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                    <Bar dataKey="Produksi" name="Proses Produksi" fill="#3b82f6" radius={[4,4,0,0]} maxBarSize={50} />
+                    <Bar dataKey="Pending" name="Total Pending" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={50} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    });
+
+    // ==========================================
+    // 🧩 KOMPONEN: Status Chart Menu
+    // ==========================================
+    const StatusChartMenu = React.memo(({ data, sidebarOpen, onRefresh, isLoading, isDarkMode }) => {
+      const [filterGrp, setFilterGrp] = useState('');
+      const [filterStatus, setFilterStatus] = useState('');
+      const [startDate, setStartDate] = useState('');
+      const [endDate, setEndDate] = useState('');
+
+      const filteredRawData = useMemo(() => {
+        return data.filter(row => {
+          let matchDate = true;
+          if (startDate && endDate) {
+            matchDate = row.tanggal >= startDate && row.tanggal <= endDate;
+          } else if (startDate) {
+            matchDate = row.tanggal >= startDate;
+          } else if (endDate) {
+            matchDate = row.tanggal <= endDate;
+          }
+          return matchDate;
+        });
+      }, [data, startDate, endDate]);
+
+      const chartData = useMemo(() => {
+        const groupsToProcess = filterGrp ? [filterGrp] : GROUP_PROSES;
+        const groups = {};
+        
+        groupsToProcess.forEach(g => {
+          groups[g] = { name: g };
+          STATUS_FIELDS.forEach(f => groups[g][f.id] = 0);
+        });
+
+        filteredRawData.forEach(row => {
+          if (groups[row.group_proses]) {
+            STATUS_FIELDS.forEach(f => {
+              groups[row.group_proses][f.id] += (row[f.id] || 0);
+            });
+          }
+        });
+        
+        return Object.values(groups);
+      }, [filteredRawData, filterGrp]);
+
+      const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
+      const tooltipBorder = isDarkMode ? '#334155' : '#e2e8f0';
+      const tooltipText = isDarkMode ? '#f8fafc' : '#0f172a';
+      const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
+      const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
+      const cursorColor = isDarkMode ? '#334155' : '#f8fafc';
+
+      const tooltipStyle = {
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        color: tooltipText,
+        borderRadius: '8px', 
+        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+      };
+
+      const visibleFields = filterStatus 
+        ? STATUS_FIELDS.filter(f => f.id === filterStatus) 
+        : STATUS_FIELDS;
+
+      const resetFilters = () => {
+        setFilterGrp('');
+        setFilterStatus('');
+        setStartDate('');
+        setEndDate('');
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col transition-colors min-h-[500px]">
+          <div className="mb-6 flex flex-col gap-5">
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Summary Status per Group Proses</h2>
+              <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-1">Distribusi akumulatif dari semua status pada tiap-tiap area kerja.</p>
+            </div>
+            
+            <div className="bg-slate-50/80 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-end gap-3 lg:gap-4 transition-colors">
+              
+              {/* Filter Tanggal */}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Rentang Tanggal</label>
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} 
+                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
+                  <span className="text-slate-400 font-bold">-</span>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} 
+                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
+                </div>
+              </div>
+
+              {/* Filter Group Proses */}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Group Proses</label>
+                <div className="relative">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select value={filterGrp} onChange={e => setFilterGrp(e.target.value)} 
+                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
+                    <option value="">Semua Group</option>
+                    {GROUP_PROSES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+              </div>
+
+              {/* Filter Status Order */}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Status Order</label>
+                <div className="relative">
+                  <Activity className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} 
+                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
+                    <option value="">Semua Status</option>
+                    {STATUS_FIELDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+              </div>
+
+              {/* Tombol Control */}
+              <div className="flex gap-2 w-full sm:w-auto ml-auto mt-2 xl:mt-0">
+                <button onClick={resetFilters} 
+                        className="flex-1 sm:flex-none px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-slate-600 dark:hover:text-red-400 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm focus:ring-2 focus:ring-slate-200 active:scale-95" title="Reset Filter">
+                  <X size={14} strokeWidth={3} /> Reset
+                </button>
+                
+                <button onClick={onRefresh} disabled={isLoading}
+                        className="flex-1 sm:flex-none px-4 py-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm focus:ring-2 focus:ring-blue-100 active:scale-95 disabled:opacity-50" title="Muat Ulang Data">
+                  <RefreshCw size={14} strokeWidth={3} className={isLoading ? "animate-spin" : ""} /> Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex-1 min-h-[400px] relative w-full mt-2">
+            <div className="absolute inset-0">
+              <ResponsiveContainer width="100%" height="100%" debounce={50}>
+                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={15} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
+                  <RechartsTooltip cursor={{fill: cursorColor}} contentStyle={tooltipStyle} itemStyle={{color: tooltipText}} />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} />
+                  
+                  {visibleFields.map((field) => {
+                    const colorIndex = STATUS_FIELDS.findIndex(f => f.id === field.id);
+                    return (
+                      <Bar 
+                        key={field.id} 
+                        dataKey={field.id} 
+                        name={field.label} 
+                        stackId="a" 
+                        fill={COLORS[colorIndex % COLORS.length]} 
+                        maxBarSize={60}
+                      />
+                    );
+                  })}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      );
+    });
+
+    const DataTable = React.memo(({ data, onRefresh, isLoading }) => {
+      const [filterGrp, setFilterGrp] = useState('');
+      const [filterShift, setFilterShift] = useState('');
+      const [filterMonth, setFilterMonth] = useState('');
+      const [filterYear, setFilterYear] = useState('');
+      const [search, setSearch] = useState('');
+      const [page, setPage] = useState(1);
+      const itemsPerPage = 10;
+
+      const availableYears = useMemo(() => {
+        const yearsSet = new Set();
+        data.forEach(row => {
+          if (row.tanggal) {
+            const year = row.tanggal.split('-')[0];
+            if (year) yearsSet.add(year);
+          }
+        });
+        const years = Array.from(yearsSet).sort((a, b) => b - a);
+        if (years.length === 0) {
+          years.push(new Date().getFullYear().toString());
+        }
+        return years;
+      }, [data]);
+
+      const filteredData = useMemo(() => {
+        return data.filter(item => {
+          const matchGrp = filterGrp ? item.group_proses === filterGrp : true;
+          const matchShift = filterShift ? item.shift === filterShift : true;
+          const matchSearch = search ? item.group_proses.toLowerCase().includes(search.toLowerCase()) || item.tanggal.includes(search) : true;
+          
+          let matchMonth = true;
+          if (item.tanggal) {
+            const parts = item.tanggal.split('-');
+            const year = parts[0];
+            const month = parts[1];
+            if (filterYear && year !== filterYear) matchMonth = false;
+            if (filterMonth && month !== filterMonth) matchMonth = false;
+          }
+
+          return matchGrp && matchShift && matchSearch && matchMonth;
+        }).sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal)); 
+      }, [data, filterGrp, filterShift, search, filterMonth, filterYear]);
+
+      const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+      const paginatedData = filteredData.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+
+      const handleExportCSV = () => {
+        const headers = ['Tanggal', 'Group Proses', 'Shift', ...STATUS_FIELDS.map(f => f.label)].join(',');
+        const rows = filteredData.map(row => {
+          return [row.tanggal, row.group_proses, row.shift, ...STATUS_FIELDS.map(f => row[f.id] || 0)].join(',');
+        });
+        const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Data_Produksi_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      };
+
+      const formatDate = (dateString) => {
+        const options = { day: 'numeric', month: 'short', year: 'numeric' };
+        return new Date(dateString).toLocaleDateString('id-ID', options);
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col transition-colors">
+          <div className="p-5 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col lg:flex-row gap-4 justify-between items-center transition-colors">
+            
+            {/* DataTable Filter Bar */}
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+              <div className="relative w-full sm:w-[200px] md:w-[220px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
+                <input type="text" placeholder="Cari tanggal / group..." value={search} onChange={e => {setSearch(e.target.value); setPage(1);}}
+                       className="pl-9 pr-4 py-2 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500" />
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                {/* Filter Bulan */}
+                <div className="relative flex-1 sm:flex-none sm:w-[145px]">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select value={filterMonth} onChange={e => {setFilterMonth(e.target.value); setPage(1);}} 
+                          className="pl-9 pr-8 py-2 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                    <option value="">Semua Bulan</option>
+                    {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+
+                {/* Filter Tahun */}
+                <div className="relative flex-1 sm:flex-none sm:w-[125px]">
+                  <select value={filterYear} onChange={e => {setFilterYear(e.target.value); setPage(1);}} 
+                          className="px-3 pr-8 py-2 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                    <option value="">Semua Tahun</option>
+                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+
+                {/* Filter Group */}
+                <div className="relative flex-1 sm:flex-none sm:w-[145px]">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select value={filterGrp} onChange={e => {setFilterGrp(e.target.value); setPage(1);}} 
+                          className="pl-9 pr-8 py-2 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                    <option value="">Semua Group</option>
+                    {GROUP_PROSES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+
+                {/* Filter Shift */}
+                <div className="relative flex-1 sm:flex-none sm:w-[135px]">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
+                  <select value={filterShift} onChange={e => {setFilterShift(e.target.value); setPage(1);}} 
+                          className="pl-9 pr-8 py-2 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none font-medium text-slate-700 dark:text-slate-200 cursor-pointer">
+                    <option value="">Semua Shift</option>
+                    {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+
+                {(filterMonth || filterYear || filterGrp || filterShift || search) && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setFilterMonth('');
+                      setFilterYear('');
+                      setFilterGrp('');
+                      setFilterShift('');
+                      setSearch('');
+                      setPage(1);
+                    }}
+                    className="px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                    title="Reset Filter"
+                  >
+                    <X size={14} strokeWidth={2.5} /> Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <button type="button" onClick={onRefresh} disabled={isLoading} className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50">
+                <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} /> Refresh
+              </button>
+              <button type="button" onClick={handleExportCSV} className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 bg-slate-900 dark:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-800 dark:hover:bg-slate-600 transition-all active:scale-95">
+                <Download size={14} /> Export
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse whitespace-nowrap min-w-max">
+              <thead>
+                <tr className="bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-bold transition-colors">
+                  <th className="p-4 pl-6">Informasi Data</th>
+                  {STATUS_FIELDS.map(f => (
+                    <th key={f.id} className="p-4 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span>{f.label.split(' ')[0]}</span>
+                        {f.label.split(' ')[1] && <span>{f.label.split(' ')[1]}</span>}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-100 dark:divide-slate-700/50">
+                {paginatedData.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="p-12 text-center">
+                      <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                        <Inbox size={48} strokeWidth={1} className="mb-3 text-slate-300 dark:text-slate-600" />
+                        <p className="text-base font-medium text-slate-600 dark:text-slate-400">Tidak ada data ditemukan</p>
+                        <p className="text-sm mt-1">Coba sesuaikan filter atau pencarian Anda.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedData.map((row, idx) => (
+                    <tr key={row.id || idx} className="hover:bg-blue-50/30 dark:hover:bg-blue-900/20 transition-colors group">
+                      <td className="p-4 pl-6">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800 dark:text-slate-100 text-base">{row.group_proses}</span>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="text-slate-500 dark:text-slate-300 text-xs font-semibold bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-2 py-0.5 rounded-md">
+                              {formatDate(row.tanggal)}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-md font-bold border ${row.shift === 'Pagi' ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' : 'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800'}`}>
+                              Shift {row.shift}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      {STATUS_FIELDS.map(f => {
+                        const val = row[f.id] || 0;
+                        const isZero = val === 0;
+                        return (
+                          <td key={f.id} className="p-4 text-center">
+                            <span className={`inline-flex items-center justify-center min-w-[2.5rem] py-1 px-2 rounded-lg text-sm font-bold transition-all ${
+                              isZero 
+                                ? 'text-slate-300 dark:text-slate-600' 
+                                : 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 group-hover:border-blue-300 dark:group-hover:border-blue-500 group-hover:text-blue-700 dark:group-hover:text-blue-400'
+                            }`}>
+                              {val}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-600 dark:text-slate-400 transition-colors">
+            <div className="font-medium">
+              Menampilkan <span className="font-bold text-slate-900 dark:text-slate-200">{paginatedData.length > 0 ? (page - 1) * itemsPerPage + 1 : 0}</span> hingga <span className="font-bold text-slate-900 dark:text-slate-200">{Math.min(page * itemsPerPage, filteredData.length)}</span> dari <span className="font-bold text-slate-900 dark:text-slate-200">{filteredData.length}</span> data
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={page === 1} onClick={() => setPage(p => p - 1)} 
+                      className="p-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-slate-700 transition-all flex items-center justify-center text-slate-700 dark:text-slate-200">
+                <ChevronLeft size={18} />
+              </button>
+              <div className="flex gap-1 items-center">
+                <span className="px-3.5 py-1.5 border border-blue-200 dark:border-blue-800/50 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold rounded-lg shadow-sm">
+                  {page}
+                </span>
+                <span className="px-2 text-slate-400 dark:text-slate-500 font-medium text-xs uppercase tracking-wider">
+                  dari {totalPages || 1}
+                </span>
+              </div>
+              <button type="button" disabled={page >= totalPages || totalPages === 0} onClick={() => setPage(p => p + 1)} 
+                      className="p-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-slate-700 transition-all flex items-center justify-center text-slate-700 dark:text-slate-200">
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    });
+
+    function App() {
+      const [isDarkMode, setIsDarkMode] = useState(() => {
+        try {
+          const saved = localStorage.getItem('theme');
+          if (saved !== null) return saved === 'dark';
+        } catch(e) {}
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          return true;
+        }
+        return false;
+      });
+
+      const [sidebarOpen, setSidebarOpen] = useState(() => {
+        return typeof window !== 'undefined' && window.innerWidth > 768;
+      });
+
+      useEffect(() => {
+        const root = document.documentElement;
+        if (isDarkMode) {
+          root.classList.add('dark');
+          document.body.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+          document.body.classList.remove('dark');
+        }
+        try {
+          localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+        } catch(e) {}
+      }, [isDarkMode]);
+
+      const [role, setRole] = useState('ADMIN'); 
+      const [activeMenu, setActiveMenu] = useState('dashboard');
+
+      const [data, setData] = useState([]);
+      const [isLoading, setIsLoading] = useState(false);
+
+      // KUNCI PERBAIKAN: Dibungkus dengan useCallback agar React.memo tidak rusak saat ganti tema
+      const loadData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+          const res = await apiService.fetchData();
+          if (res.status === 'success') {
+            setData(res.data);
+          }
+        } catch (err) {
+          console.error("Failed to load data", err);
+        }
+        setIsLoading(false);
+      }, []);
+
+      useEffect(() => {
+        if (data.length === 0) {
+          loadData();
+        }
+      }, [loadData]);
+
+      const handleSwitchRole = (newRole) => {
+        setRole(newRole);
+        if (newRole === 'KARU') {
+          setActiveMenu('input');
+        } else {
+          if (activeMenu === 'input') setActiveMenu('dashboard');
+        }
+      };
+
+      const menuItems = role === 'KARU' 
+        ? [{ id: 'input', label: 'Form Input', icon: ClipboardList }]
+        : [
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'status-chart', label: 'Status Chart', icon: BarChart2 }, 
+            { id: 'table', label: 'Data Table', icon: Database }
+          ];
+
+      return (
+        <div className="flex h-screen text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 overflow-hidden transition-colors duration-300">
+          
+          <aside className={`fixed md:relative z-30 h-full shadow-xl bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full overflow-hidden'}`}>
+            <div className="h-16 px-6 flex items-center justify-between text-slate-800 dark:text-white font-bold text-xl border-b border-slate-200 dark:border-slate-800 min-w-[256px]">
+              <div className="flex items-center gap-2"><Database size={20} className="text-blue-600 dark:text-blue-500"/> ProdMonitor</div>
+              <button type="button" className="text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white transition-colors p-1.5 rounded-md dark:hover:bg-slate-800" onClick={() => setSidebarOpen(false)}>
+                <ChevronLeft size={20} className="hidden md:block" />
+                <X size={20} className="block md:hidden" />
+              </button>
+            </div>
+            
+            <div className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 min-w-[256px]">Menu {role}</div>
+            <nav className="flex-1 px-4 space-y-1 min-w-[256px]">
+              {menuItems.map(item => (
+                <button type="button" key={item.id} onClick={() => { setActiveMenu(item.id); if(window.innerWidth < 768) setSidebarOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${activeMenu === item.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
+                  {item.icon && <item.icon size={18} />} {item.label}
+                </button>
+              ))}
+            </nav>
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 min-w-[256px]">
+              <button 
+                type="button" 
+                onClick={() => handleSwitchRole(role === 'ADMIN' ? 'KARU' : 'ADMIN')} 
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors font-bold text-xs shadow-sm border border-blue-200 dark:border-blue-800"
+              >
+                <RefreshCw size={14} /> 
+                <span>Switch ke {role === 'ADMIN' ? 'User Karu' : 'Dashboard Admin'}</span>
+              </button>
+            </div>
+          </aside>
+
+          <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+            <header className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 transition-colors">
+              <div className="flex items-center gap-3">
+                {!sidebarOpen && (
+                  <button type="button" className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white focus:outline-none p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" onClick={() => setSidebarOpen(true)}>
+                    <Menu size={24} />
+                  </button>
+                )}
+                <h1 className={`text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate ${!sidebarOpen ? 'ml-1' : ''}`}>
+                  {menuItems.find(m => m.id === activeMenu)?.label}
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-2 sm:gap-4">
+                {/* Switch Role Pill Toggle */}
+                <div className="bg-slate-100 dark:bg-slate-700/80 p-1 rounded-xl flex items-center gap-1 border border-slate-200 dark:border-slate-600">
+                  <button 
+                    type="button"
+                    onClick={() => handleSwitchRole('ADMIN')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      role === 'ADMIN' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <LayoutDashboard size={14} />
+                    <span>Admin</span>
+                  </button>
+
+                  <button 
+                    type="button"
+                    onClick={() => handleSwitchRole('KARU')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      role === 'KARU' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <ClipboardList size={14} />
+                    <span>User Karu</span>
+                  </button>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className="p-2 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0"
+                >
+                  {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                </button>
+
+                <div className="flex items-center gap-3 border-l border-slate-200 dark:border-slate-700 pl-3 sm:pl-4 transition-colors">
+                  <div className="hidden sm:flex flex-col items-end">
+                    <span className="text-sm font-bold">{role === 'KARU' ? 'Kepala Ruangan' : 'Administrator'}</span>
+                    <span className="text-xs text-green-500 font-medium flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span> Online
+                    </span>
+                  </div>
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-100 dark:bg-slate-700 rounded-full flex items-center justify-center border border-slate-200 dark:border-slate-600 transition-colors shrink-0">
+                    <span className="font-bold text-blue-600 dark:text-slate-300 text-sm sm:text-base">{role === 'KARU' ? 'K' : 'A'}</span>
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <div className="flex-1 overflow-auto p-4 md:p-8">
+              {activeMenu === 'input' && <KaruForm onSuccess={() => { if(role === 'ADMIN') loadData(); }} />}
+              
+              {activeMenu === 'dashboard' && (
+                isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
+                          : <AdminDashboard data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} onSwitchToKaru={() => handleSwitchRole('KARU')} isDarkMode={isDarkMode} />
+              )}
+
+              {activeMenu === 'status-chart' && (
+                isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
+                          : <StatusChartMenu data={data} sidebarOpen={sidebarOpen} onRefresh={loadData} isLoading={isLoading} isDarkMode={isDarkMode} />
+              )}
+
+              {activeMenu === 'table' && (
+                isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
+                          : <DataTable data={data} onRefresh={loadData} isLoading={isLoading} />
+              )}
+            </div>
+          </main>
+
+          {sidebarOpen && (
+            <div className="fixed inset-0 bg-slate-900/50 z-20 md:hidden" onClick={() => setSidebarOpen(false)}></div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
