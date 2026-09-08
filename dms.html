@@ -104,7 +104,7 @@
       LayoutDashboard, ClipboardList, Database, LogOut, Search, Filter, 
       Download, CheckCircle, AlertCircle, Loader2, Menu, X,
       Activity, Clock, Package, AlertTriangle, ChevronLeft, ChevronRight, Inbox,
-      Sun, Moon, BarChart2, RefreshCw, ChevronDown, Calendar, FileText, Settings
+      Sun, Moon, BarChart2, RefreshCw, ChevronDown, Calendar
     } = Lucide;
 
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzfqf9QKzH-OUMX5RIJ-Nzy54DXmO9lNowKXXxxRDgf1XSbk8jGCvAyPddOGwC-t1ks/exec"; 
@@ -680,25 +680,8 @@
     const StatusChartMenu = React.memo(({ data, onRefresh, isLoading, isDarkMode }) => {
       const [filterGrp, setFilterGrp] = useState('');
       const [filterStatus, setFilterStatus] = useState('');
-      const [filterMonth, setFilterMonth] = useState('');
-      const [filterYear, setFilterYear] = useState('');
       const [startDate, setStartDate] = useState('');
       const [endDate, setEndDate] = useState('');
-
-      const availableYears = useMemo(() => {
-        const yearsSet = new Set();
-        data.forEach(row => {
-          if (row.tanggal) {
-            const year = row.tanggal.split('-')[0];
-            if (year) yearsSet.add(year);
-          }
-        });
-        const years = Array.from(yearsSet).sort((a, b) => b - a);
-        if (years.length === 0) {
-          years.push(new Date().getFullYear().toString());
-        }
-        return years;
-      }, [data]);
 
       const filteredRawData = useMemo(() => {
         return data.filter(row => {
@@ -710,20 +693,9 @@
           } else if (endDate) {
             matchDate = row.tanggal <= endDate;
           }
-
-          if (row.tanggal) {
-            const parts = row.tanggal.split('-');
-            const year = parts[0];
-            const month = parts[1];
-            if (filterYear && year !== filterYear) matchDate = false;
-            if (filterMonth && month !== filterMonth) matchDate = false;
-          } else if (filterYear || filterMonth) {
-            matchDate = false;
-          }
-
           return matchDate;
         });
-      }, [data, startDate, endDate, filterMonth, filterYear]);
+      }, [data, startDate, endDate]);
 
       const chartData = useMemo(() => {
         const groupsToProcess = filterGrp ? [filterGrp] : GROUP_PROSES;
@@ -775,8 +747,6 @@
       const resetFilters = () => {
         setFilterGrp('');
         setFilterStatus('');
-        setFilterMonth('');
-        setFilterYear('');
         setStartDate('');
         setEndDate('');
       };
@@ -791,59 +761,14 @@
             
             <div className="bg-slate-50/80 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-end gap-3 lg:gap-4 transition-colors">
               
-              {/* Filter Bulan */}
-              <div className="flex flex-col">
-                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Bulan</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
-                  <select 
-                    value={filterMonth} 
-                    onChange={e => {
-                      setFilterMonth(e.target.value);
-                      if (e.target.value) {
-                        setStartDate('');
-                        setEndDate('');
-                      }
-                    }} 
-                    className="w-[135px] sm:w-[145px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
-                  >
-                    <option value="">Semua Bulan</option>
-                    {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                </div>
-              </div>
-
-              {/* Filter Tahun */}
-              <div className="flex flex-col">
-                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Tahun</label>
-                <div className="relative">
-                  <select 
-                    value={filterYear} 
-                    onChange={e => {
-                      setFilterYear(e.target.value);
-                      if (e.target.value) {
-                        setStartDate('');
-                        setEndDate('');
-                      }
-                    }} 
-                    className="w-[110px] sm:w-[120px] px-3 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
-                  >
-                    <option value="">Semua Tahun</option>
-                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                </div>
-              </div>
-
               {/* Filter Tanggal */}
               <div className="flex flex-col">
                 <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Rentang Tanggal</label>
                 <div className="flex items-center gap-1.5 sm:gap-2">
-                  <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} 
                          className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                   <span className="text-slate-400 font-bold">-</span>
-                  <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} 
                          className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                 </div>
               </div>
@@ -1187,69 +1112,6 @@
       );
     });
 
-    const PengaturanMenu = React.memo(({ isDarkMode, setIsDarkMode }) => {
-      return (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
-            <div className="flex items-center gap-3.5 pb-6 border-b border-slate-100 dark:border-slate-700">
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl">
-                <Settings size={24} strokeWidth={1.8} />
-              </div>
-              <div>
-                <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Pengaturan Sistem</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Preferensi antarmuka dan konfigurasi sistem DMS.</p>
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-4 max-w-2xl">
-              <div className="p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 flex items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Tema Tampilan</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pilih tampilan Light Mode (white/off-white) atau Dark Mode (deep navy).</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    type="button" 
-                    onClick={() => setIsDarkMode(false)} 
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${!isDarkMode ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                  >
-                    Light
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setIsDarkMode(true)} 
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isDarkMode ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                  >
-                    Dark
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 flex items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Format Tanggal</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Format standar tanggal pada sistem dan export CSV.</p>
-                </div>
-                <span className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg shadow-sm">
-                  DD-MM-YYYY
-                </span>
-              </div>
-
-              <div className="p-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 flex items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm">Status Server</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Koneksi sinkronisasi data Google Sheets.</p>
-                </div>
-                <span className="flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-3 py-1 rounded-lg border border-green-200 dark:border-green-800">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span> Online
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    });
-
     function App() {
       const [isDarkMode, setIsDarkMode] = useState(() => {
         try {
@@ -1319,187 +1181,61 @@
         }
       };
 
-      const adminSections = useMemo(() => [
-        {
-          title: 'MENU ADMIN',
-          items: [
+      const menuItems = role === 'KARU' 
+        ? [{ id: 'input', label: 'Form Input', icon: ClipboardList }]
+        : [
             { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { id: 'status-chart', label: 'Status Chart', icon: BarChart2 }, 
             { id: 'table', label: 'Data Table', icon: Database }
-          ]
-        },
-        {
-          title: 'SISTEM',
-          items: [
-            { id: 'pengaturan', label: 'Pengaturan', icon: Settings }
-          ]
-        }
-      ], []);
-
-      const karuSections = useMemo(() => [
-        {
-          title: 'MENU USER',
-          items: [
-            { id: 'input', label: 'Form Input', icon: ClipboardList }
-          ]
-        }
-      ], []);
-
-      const currentSections = role === 'KARU' ? karuSections : adminSections;
-      const allMenuItems = useMemo(() => currentSections.flatMap(s => s.items), [currentSections]);
-      const activeMenuLabel = allMenuItems.find(m => m.id === activeMenu)?.label || 'Dashboard';
+          ];
 
       return (
         <div className="flex h-screen text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 overflow-hidden transition-colors duration-300">
           
-          <aside className={`fixed md:relative z-30 h-full shadow-xl md:shadow-none bg-white dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800 flex flex-col transition-all duration-300 ${
-            sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-20'
-          }`}>
-            {/* Header / Logo */}
-            <div className={`h-16 flex items-center border-b border-slate-200/80 dark:border-slate-800 flex-shrink-0 transition-all ${
-              sidebarOpen ? 'px-5 justify-between' : 'justify-center'
-            }`}>
-              {sidebarOpen ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <img src="logo.png" alt="DMS" className="w-8 h-8 rounded-lg shadow-sm object-contain flex-shrink-0" />
-                    <span className="font-extrabold tracking-tight text-xl text-slate-800 dark:text-white">DMS</span>
-                  </div>
-                  <button 
-                    type="button" 
-                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" 
-                    onClick={() => handleToggleSidebar(false)}
-                    title="Kecilkan Sidebar"
-                  >
-                    <ChevronLeft size={18} className="hidden md:block" />
-                    <X size={20} className="block md:hidden" />
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleToggleSidebar(true)}
-                  className="group relative p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  title="Perluas Sidebar"
-                >
-                  <img src="logo.png" alt="DMS" className="w-8 h-8 rounded-lg shadow-sm object-contain" />
-                  <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold rounded-lg shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                    Perluas Sidebar
-                  </div>
-                </button>
-              )}
+          <aside className={`fixed md:relative z-30 h-full shadow-xl bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full border-r-0 overflow-hidden'}`}>
+            <div className="h-16 px-6 flex items-center justify-between text-slate-800 dark:text-white font-bold text-xl border-b border-slate-200 dark:border-slate-800 min-w-[256px]">
+              <div className="flex items-center gap-2.5">
+                <img src="logo.png" alt="DMS" className="w-8 h-8 rounded-lg shadow-sm object-contain" />
+                <span className="font-extrabold tracking-tight text-xl">DMS</span>
+              </div>
+              <button type="button" className="text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white transition-colors p-1.5 rounded-md dark:hover:bg-slate-800" onClick={() => handleToggleSidebar(false)}>
+                <ChevronLeft size={20} className="hidden md:block" />
+                <X size={20} className="block md:hidden" />
+              </button>
             </div>
-
-            {/* Navigation Menu with Sections */}
-            <nav className={`flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar py-4 transition-all ${
-              sidebarOpen ? 'px-3 space-y-6' : 'px-2 space-y-3'
-            }`}>
-              {currentSections.map((section, sIdx) => (
-                <div key={section.title || sIdx}>
-                  {sidebarOpen ? (
-                    <div className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-                      {section.title}
-                    </div>
-                  ) : (
-                    sIdx > 0 && <div className="my-2 border-t border-slate-100 dark:border-slate-800/80 mx-2" />
-                  )}
-
-                  <div className="space-y-1.5">
-                    {section.items.map(item => {
-                      const isActive = activeMenu === item.id;
-                      const IconComponent = item.icon;
-
-                      if (sidebarOpen) {
-                        return (
-                          <button
-                            type="button"
-                            key={item.id}
-                            onClick={() => {
-                              setActiveMenu(item.id);
-                              if (window.innerWidth < 768) handleToggleSidebar(false);
-                            }}
-                            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 font-semibold text-sm ${
-                              isActive
-                                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/80'
-                            }`}
-                          >
-                            {IconComponent && <IconComponent size={18} strokeWidth={isActive ? 2.2 : 1.8} className="flex-shrink-0" />}
-                            <span className="truncate">{item.label}</span>
-                          </button>
-                        );
-                      }
-
-                      return (
-                        <div key={item.id} className="relative group flex justify-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveMenu(item.id);
-                              if (window.innerWidth < 768) handleToggleSidebar(false);
-                            }}
-                            className={`w-11 h-11 flex items-center justify-center rounded-xl transition-all duration-150 ${
-                              isActive
-                                ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
-                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/80'
-                            }`}
-                          >
-                            {IconComponent && <IconComponent size={19} strokeWidth={isActive ? 2.2 : 1.8} />}
-                          </button>
-                          <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold rounded-lg shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                            {item.label}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+            
+            <div className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 min-w-[256px]">Menu {role}</div>
+            <nav className="flex-1 px-4 space-y-1 min-w-[256px]">
+              {menuItems.map(item => (
+                <button type="button" key={item.id} onClick={() => { setActiveMenu(item.id); if(window.innerWidth < 768) handleToggleSidebar(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${activeMenu === item.id ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
+                  {item.icon && <item.icon size={18} />} {item.label}
+                </button>
               ))}
             </nav>
 
-            {/* Bottom Action */}
-            <div className={`border-t border-slate-200/80 dark:border-slate-800 flex-shrink-0 transition-all ${
-              sidebarOpen ? 'p-3.5' : 'p-2 flex justify-center'
-            }`}>
-              {sidebarOpen ? (
-                <button 
-                  type="button" 
-                  onClick={() => { handleSwitchRole(role === 'ADMIN' ? 'KARU' : 'ADMIN'); if(window.innerWidth < 768) handleToggleSidebar(false); }} 
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all font-semibold text-xs border border-blue-200/80 dark:border-blue-800/60 shadow-sm"
-                >
-                  <RefreshCw size={14} strokeWidth={2} className="flex-shrink-0" /> 
-                  <span className="truncate">Switch ke {role === 'ADMIN' ? 'User Baru' : 'Dashboard Admin'}</span>
-                </button>
-              ) : (
-                <div className="relative group flex justify-center">
-                  <button 
-                    type="button" 
-                    onClick={() => { handleSwitchRole(role === 'ADMIN' ? 'KARU' : 'ADMIN'); if(window.innerWidth < 768) handleToggleSidebar(false); }} 
-                    className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all border border-blue-200/80 dark:border-blue-800/60 shadow-sm"
-                  >
-                    <RefreshCw size={16} strokeWidth={2} />
-                  </button>
-                  <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold rounded-lg shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                    Switch ke {role === 'ADMIN' ? 'User Baru' : 'Dashboard Admin'}
-                  </div>
-                </div>
-              )}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 min-w-[256px]">
+              <button 
+                type="button" 
+                onClick={() => { handleSwitchRole(role === 'ADMIN' ? 'KARU' : 'ADMIN'); if(window.innerWidth < 768) handleToggleSidebar(false); }} 
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors font-bold text-xs shadow-sm border border-blue-200 dark:border-blue-800"
+              >
+                <RefreshCw size={14} /> 
+                <span>Switch ke {role === 'ADMIN' ? 'User Karu' : 'Dashboard Admin'}</span>
+              </button>
             </div>
           </aside>
 
           <main className="flex-1 flex flex-col h-full overflow-hidden relative">
             <header className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 transition-colors">
               <div className="flex items-center gap-3">
-                <button 
-                  type="button" 
-                  className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white focus:outline-none p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" 
-                  onClick={() => handleToggleSidebar(!sidebarOpen)}
-                  title={sidebarOpen ? "Kecilkan Sidebar" : "Buka Sidebar"}
-                >
-                  <Menu size={22} />
-                </button>
-                <h1 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate ml-1">
-                  {activeMenuLabel}
+                {!sidebarOpen && (
+                  <button type="button" className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white focus:outline-none p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" onClick={() => handleToggleSidebar(true)}>
+                    <Menu size={24} />
+                  </button>
+                )}
+                <h1 className={`text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate ${!sidebarOpen ? 'ml-1' : ''}`}>
+                  {menuItems.find(m => m.id === activeMenu)?.label}
                 </h1>
               </div>
 
@@ -1566,8 +1302,6 @@
                 isLoading && data.length === 0 ? <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-500"><Loader2 className="animate-spin mr-2" /> Memuat Data...</div> 
                           : <DataTable data={data} onRefresh={loadData} isLoading={isLoading} />
               )}
-
-              {activeMenu === 'pengaturan' && <PengaturanMenu isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />}
             </div>
           </main>
 
