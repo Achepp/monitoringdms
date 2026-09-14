@@ -137,6 +137,28 @@
     ];
     const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#64748b', '#ec4899'];
 
+    // Status Categories & Colors khusus Chart Status Produksi per Group
+    const STATUS_PRODUKSI_CATEGORIES = [
+      { id: 'proses_produksi', label: 'Proses Produksi', color: '#3b82f6' },
+      { id: 'pending_produksi', label: 'Pending Produksi', color: '#ef4444' },
+      { id: 'proses_kemas', label: 'Proses Kemas', color: '#10b981' },
+      { id: 'pending_kemas', label: 'Pending Kemas', color: '#f59e0b' },
+      { id: 'selesai_kemas', label: 'Selesai Kemas', color: '#8b5cf6' },
+      { id: 'dirty', label: 'Dirty', color: '#ec4899' },
+      { id: 'tk', label: 'TK', color: '#06b6d4' },
+      { id: 'wash', label: 'Wash', color: '#64748b' }
+    ];
+
+    const TARGET_PRODUCTION_GROUPS = ["Epoxy", "Politur", "Waterbased", "Utility"];
+
+    const ThreeDotsIcon = ({ size = 18, className = "" }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+        <circle cx="12" cy="5" r="1.2" fill="currentColor" />
+        <circle cx="12" cy="19" r="1.2" fill="currentColor" />
+      </svg>
+    );
+
     const formatIndoDate = (dateVal, isShort = false) => {
       if (!dateVal) return '';
       if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
@@ -364,9 +386,542 @@
       );
     });
 
+    // ==========================================
+    // 🧩 KOMPONEN: Status Produksi per Group (Horizontal Stacked Bar Chart)
+    // ==========================================
+    const StatusProduksiPerGroupChart = React.memo(({ 
+      data = [], 
+      isDarkMode = false, 
+      selectedGroup = '', 
+      selectedStatus = '', 
+      onFilterChange, 
+      onResetFilter,
+      title = "Status Produksi per Group",
+      subtitle = "Distribusi status order pada setiap group proses"
+    }) => {
+      const [viewMode, setViewMode] = useState('total'); // 'total' (Total Order) or 'percentage' (Percentage)
+      const [showModeDropdown, setShowModeDropdown] = useState(false);
+      const [showMenuDropdown, setShowMenuDropdown] = useState(false);
+      const [showGridlines, setShowGridlines] = useState(true);
+      const [hoveredSegment, setHoveredSegment] = useState(null);
+      const [copiedNotification, setCopiedNotification] = useState(false);
+
+      const modeDropdownRef = React.useRef(null);
+      const menuDropdownRef = React.useRef(null);
+
+      // Close dropdowns on outside click
+      useEffect(() => {
+        const handleClickOutside = (e) => {
+          if (modeDropdownRef.current && !modeDropdownRef.current.contains(e.target)) {
+            setShowModeDropdown(false);
+          }
+          if (menuDropdownRef.current && !menuDropdownRef.current.contains(e.target)) {
+            setShowMenuDropdown(false);
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, []);
+
+      // Calculate aggregated data for ALL group proses
+      const groupsData = useMemo(() => {
+        // Collect all available groups from GROUP_PROSES and data
+        const allGroupsSet = new Set(GROUP_PROSES);
+        data.forEach(row => {
+          if (row.group_proses && String(row.group_proses).trim()) {
+            allGroupsSet.add(String(row.group_proses).trim());
+          }
+        });
+        const allGroups = Array.from(allGroupsSet);
+
+        return allGroups.map(groupName => {
+          const counts = {};
+          STATUS_PRODUKSI_CATEGORIES.forEach(cat => {
+            counts[cat.id] = 0;
+          });
+
+          data.forEach(row => {
+            if (row.group_proses === groupName) {
+              STATUS_PRODUKSI_CATEGORIES.forEach(cat => {
+                counts[cat.id] += Number(row[cat.id] || 0);
+              });
+            }
+          });
+
+          const totalOrder = STATUS_PRODUKSI_CATEGORIES.reduce((acc, cat) => acc + (counts[cat.id] || 0), 0);
+
+          // Find first and last visible categories for rounded corners
+          const visibleCategories = STATUS_PRODUKSI_CATEGORIES.filter(cat => (counts[cat.id] || 0) > 0);
+          const firstVisibleId = visibleCategories.length > 0 ? visibleCategories[0].id : null;
+          const lastVisibleId = visibleCategories.length > 0 ? visibleCategories[visibleCategories.length - 1].id : null;
+
+          const segments = STATUS_PRODUKSI_CATEGORIES.map(cat => {
+            const count = counts[cat.id] || 0;
+            const percentage = totalOrder > 0 ? (count / totalOrder) * 100 : 0;
+            return {
+              id: cat.id,
+              label: cat.label,
+              color: cat.color,
+              count,
+              percentage,
+              isFirst: cat.id === firstVisibleId,
+              isLast: cat.id === lastVisibleId,
+              isSingle: visibleCategories.length === 1 && cat.id === firstVisibleId
+            };
+          });
+
+          return {
+            name: groupName,
+            totalOrder,
+            segments
+          };
+        });
+      }, [data]);
+
+      const maxTotalOrder = useMemo(() => {
+        const max = Math.max(...groupsData.map(g => g.totalOrder), 0);
+        return max > 0 ? max : 1;
+      }, [groupsData]);
+
+      const handleSegmentClick = (groupName, statusId) => {
+        if (onFilterChange) {
+          if (selectedGroup === groupName && selectedStatus === statusId) {
+            if (onResetFilter) onResetFilter();
+          } else {
+            onFilterChange(groupName, statusId);
+          }
+        }
+      };
+
+      const handleExportCSV = () => {
+        setShowMenuDropdown(false);
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += ["Group", "Total Order", ...STATUS_PRODUKSI_CATEGORIES.map(c => `"${c.label}"`)].join(",") + "\n";
+        groupsData.forEach(g => {
+          const row = [
+            `"${g.name}"`,
+            g.totalOrder,
+            ...STATUS_PRODUKSI_CATEGORIES.map(c => {
+              const seg = g.segments.find(s => s.id === c.id);
+              return seg ? seg.count : 0;
+            })
+          ];
+          csvContent += row.join(",") + "\n";
+        });
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `status_produksi_per_group_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      const handleCopySummary = () => {
+        setShowMenuDropdown(false);
+        const summaryText = groupsData.map(g => {
+          const segText = g.segments.filter(s => s.count > 0).map(s => `${s.label}: ${s.count} (${s.percentage.toFixed(1)}%)`).join(', ');
+          return `[${g.name}] Total: ${g.totalOrder} | ${segText || 'Tidak ada order'}`;
+        }).join('\n');
+        navigator.clipboard.writeText(`Ringkasan Status Produksi per Group:\n${summaryText}`).then(() => {
+          setCopiedNotification(true);
+          setTimeout(() => setCopiedNotification(false), 2500);
+        });
+      };
+
+      return (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl md:rounded-[20px] border border-slate-100 dark:border-slate-700/60 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] p-5 sm:p-6 md:p-8 transition-colors flex flex-col relative">
+          
+          {/* Toast Notifikasi Salin */}
+          {copiedNotification && (
+            <div className="absolute top-5 right-5 bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-1.5 z-40 transition-all animate-bounce">
+              <CheckCircle size={14} /> Ringkasan berhasil disalin!
+            </div>
+          )}
+
+          {/* Header Card: Judul, Subtitle & Kontrol Kanan Atas */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-lg md:text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">
+                {title}
+              </h3>
+              <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                {subtitle}
+              </p>
+            </div>
+
+            {/* Aksi Kanan Atas: Dropdown "Total" dan Menu Tiga Titik */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              
+              {/* Dropdown "Total": Total Order / Percentage */}
+              <div className="relative" ref={modeDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowModeDropdown(!showModeDropdown)}
+                  className="px-3 py-1.5 bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-600/80 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition-all flex items-center gap-2 shadow-sm focus:outline-none active:scale-95"
+                  title="Ganti Mode Tampilan"
+                >
+                  <span className="text-slate-400 dark:text-slate-500 font-semibold">Total:</span>
+                  <span>{viewMode === 'total' ? 'Total Order' : 'Percentage'}</span>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${showModeDropdown ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showModeDropdown && (
+                  <div className="absolute right-0 mt-1.5 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-30 py-1 overflow-hidden transition-all text-xs">
+                    <button
+                      type="button"
+                      onClick={() => { setViewMode('total'); setShowModeDropdown(false); }}
+                      className={`w-full px-3.5 py-2 text-left flex items-center justify-between transition-colors ${
+                        viewMode === 'total' 
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' 
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <span>Total Order</span>
+                      {viewMode === 'total' && <CheckCircle size={14} className="text-blue-600 dark:text-blue-400" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setViewMode('percentage'); setShowModeDropdown(false); }}
+                      className={`w-full px-3.5 py-2 text-left flex items-center justify-between transition-colors ${
+                        viewMode === 'percentage' 
+                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' 
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <span>Percentage</span>
+                      {viewMode === 'percentage' && <CheckCircle size={14} className="text-blue-600 dark:text-blue-400" />}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Three-dot Menu untuk aksi tambahan */}
+              <div className="relative" ref={menuDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowMenuDropdown(!showMenuDropdown)}
+                  className="p-1.5 sm:p-2 bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-600/80 rounded-xl text-slate-600 dark:text-slate-300 transition-all shadow-sm focus:outline-none active:scale-95"
+                  title="Aksi Tambahan Chart"
+                >
+                  <ThreeDotsIcon size={16} />
+                </button>
+
+                {showMenuDropdown && (
+                  <div className="absolute right-0 mt-1.5 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-30 py-1.5 overflow-hidden transition-all text-xs">
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                    >
+                      <Download size={14} className="text-slate-400" />
+                      <span>Download CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopySummary}
+                      className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                    >
+                      <FileText size={14} className="text-slate-400" />
+                      <span>Salin Ringkasan Data</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowGridlines(!showGridlines); setShowMenuDropdown(false); }}
+                      className="w-full px-3.5 py-2 text-left flex items-center justify-between text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Activity size={14} className="text-slate-400" />
+                        <span>Garis Grid</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">{showGridlines ? 'Aktif' : 'Nonaktif'}</span>
+                    </button>
+                    {(selectedGroup || selectedStatus) && (
+                      <button
+                        type="button"
+                        onClick={() => { if(onResetFilter) onResetFilter(); setShowMenuDropdown(false); }}
+                        className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border-t border-slate-100 dark:border-slate-700/60 mt-1 pt-1.5"
+                      >
+                        <X size={14} />
+                        <span>Reset Filter</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Indikator Filter Aktif (bisa di-reset dengan klik badge) */}
+          {(selectedGroup || selectedStatus) && (
+            <div className="flex items-center flex-wrap gap-2 mb-5 pb-3 border-b border-slate-100 dark:border-slate-700/60 animate-fadeIn">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Filter Aktif:</span>
+              {selectedGroup && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200/80 dark:border-blue-800/60 shadow-sm">
+                  Group: {selectedGroup}
+                  <button 
+                    type="button" 
+                    onClick={() => onFilterChange ? onFilterChange('', selectedStatus) : null} 
+                    className="hover:text-red-600 dark:hover:text-red-400 p-0.5 rounded"
+                    title="Hapus filter group"
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </span>
+              )}
+              {selectedStatus && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold border border-slate-200 dark:border-slate-600 shadow-sm">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_PRODUKSI_CATEGORIES.find(c => c.id === selectedStatus)?.color }} />
+                  Status: {STATUS_PRODUKSI_CATEGORIES.find(c => c.id === selectedStatus)?.label}
+                  <button 
+                    type="button" 
+                    onClick={() => onFilterChange ? onFilterChange(selectedGroup, '') : null} 
+                    className="hover:text-red-600 dark:hover:text-red-400 p-0.5 rounded"
+                    title="Hapus filter status"
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </span>
+              )}
+              <button 
+                type="button" 
+                onClick={onResetFilter}
+                className="text-xs text-red-600 dark:text-red-400 hover:underline font-bold ml-auto flex items-center gap-1"
+              >
+                <X size={12} strokeWidth={2.5} /> Reset Semua
+              </button>
+            </div>
+          )}
+
+          {/* Area Chart: Stacked Horizontal Bars */}
+          <div className="flex flex-col gap-4 relative">
+            
+            {groupsData.map(group => {
+              const isGroupActive = !selectedGroup || selectedGroup === group.name;
+
+              return (
+                <div key={group.name} className="flex items-center gap-3 sm:gap-4 py-1.5 group">
+                  
+                  {/* Nama Group di sebelah kiri */}
+                  <div className="w-24 sm:w-28 md:w-32 flex-shrink-0 text-left" title={group.name}>
+                    <span className={`text-xs sm:text-sm font-bold tracking-tight transition-colors truncate block ${
+                      selectedGroup && selectedGroup !== group.name 
+                        ? 'text-slate-400 dark:text-slate-500' 
+                        : 'text-slate-800 dark:text-slate-100'
+                    }`}>
+                      {group.name}
+                    </span>
+                  </div>
+
+                  {/* Horizontal Bar Track Container */}
+                  <div className="flex-1 relative">
+                    {/* Subtle horizontal gridline */}
+                    {showGridlines && (
+                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-b border-dashed border-slate-200/80 dark:border-slate-700/60 pointer-events-none -z-0" />
+                    )}
+
+                    {/* Stacked bar wrapper */}
+                    <div className="relative w-full h-9 sm:h-10 bg-slate-100/80 dark:bg-slate-700/40 rounded-xl p-0.5 flex items-center">
+                      <div 
+                        className="h-full flex items-stretch transition-all duration-300 relative"
+                        style={{ 
+                          width: viewMode === 'percentage' 
+                            ? '100%' 
+                            : `${Math.max((group.totalOrder / maxTotalOrder) * 100, group.totalOrder > 0 ? 6 : 0)}%` 
+                        }}
+                      >
+                        {group.segments.map(seg => {
+                          if (seg.count === 0) return null;
+
+                          const isSegmentActive = selectedStatus === seg.id && (selectedGroup === '' || selectedGroup === group.name);
+                          const isAnyFilterActive = Boolean(selectedGroup || selectedStatus);
+                          const isDimmed = isAnyFilterActive && !((!selectedGroup || selectedGroup === group.name) && (!selectedStatus || selectedStatus === seg.id));
+
+                          // Rounded corner classes untuk segmen awal dan akhir
+                          let roundedClass = 'rounded-none';
+                          if (seg.isSingle) roundedClass = 'rounded-lg';
+                          else if (seg.isFirst) roundedClass = 'rounded-l-lg';
+                          else if (seg.isLast) roundedClass = 'rounded-r-lg';
+
+                          // Angka di dalam segmen hanya muncul jika cukup lebar
+                          const displayPercentage = seg.percentage;
+                          const isWideEnough = viewMode === 'percentage' 
+                            ? displayPercentage >= 6.5 
+                            : (displayPercentage >= 7.5 && (group.totalOrder / maxTotalOrder) >= 0.22);
+
+                          return (
+                            <div
+                              key={seg.id}
+                              onClick={() => handleSegmentClick(group.name, seg.id)}
+                              onMouseEnter={(e) => {
+                                setHoveredSegment({
+                                  group: group.name,
+                                  statusId: seg.id,
+                                  statusLabel: seg.label,
+                                  color: seg.color,
+                                  count: seg.count,
+                                  percentage: seg.percentage,
+                                  total: group.totalOrder,
+                                  clientX: e.clientX,
+                                  clientY: e.clientY
+                                });
+                              }}
+                              onMouseMove={(e) => {
+                                setHoveredSegment(prev => prev ? { ...prev, clientX: e.clientX, clientY: e.clientY } : null);
+                              }}
+                              onMouseLeave={() => setHoveredSegment(null)}
+                              className={`h-full flex items-center justify-center relative cursor-pointer select-none transition-all duration-150 ${roundedClass} ${
+                                isSegmentActive 
+                                  ? 'ring-2 ring-blue-500 ring-offset-1 dark:ring-offset-slate-900 z-10 brightness-110 shadow-md scale-[1.02]' 
+                                  : isDimmed 
+                                    ? 'opacity-30 hover:opacity-75' 
+                                    : 'hover:brightness-105 hover:z-10'
+                              }`}
+                              style={{
+                                width: `${seg.percentage}%`,
+                                backgroundColor: seg.color
+                              }}
+                              title={`${group.name} - ${seg.label}: ${seg.count} order (${seg.percentage.toFixed(1)}%)`}
+                            >
+                              {isWideEnough && (
+                                <span className="text-[10px] sm:text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] px-1 truncate pointer-events-none">
+                                  {viewMode === 'percentage' ? `${Math.round(seg.percentage)}%` : seg.count}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {group.totalOrder === 0 && (
+                          <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-400 italic">
+                            Belum ada order
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Nilai TOTAL ORDER di ujung kanan */}
+                  <div className="w-16 sm:w-20 flex-shrink-0 text-right">
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">
+                        {viewMode === 'percentage' 
+                          ? (group.totalOrder > 0 ? '100%' : '0%') 
+                          : group.totalOrder.toLocaleString()}
+                      </span>
+                      {viewMode === 'percentage' && group.totalOrder > 0 && (
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold leading-none mt-0.5">
+                          {group.totalOrder} order
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Skala Sumbu X / Grid Bawah */}
+            {showGridlines && (
+              <div className="flex items-center gap-3 sm:gap-4 pt-1">
+                <div className="w-24 sm:w-28 md:w-32 flex-shrink-0" />
+                <div className="flex-1 flex justify-between text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-1 border-t border-slate-200/60 dark:border-slate-700/50 pt-1.5">
+                  {viewMode === 'percentage' ? (
+                    <>
+                      <span>0%</span>
+                      <span>25%</span>
+                      <span>50%</span>
+                      <span>75%</span>
+                      <span>100%</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>0</span>
+                      <span>{Math.round(maxTotalOrder * 0.25).toLocaleString()}</span>
+                      <span>{Math.round(maxTotalOrder * 0.5).toLocaleString()}</span>
+                      <span>{Math.round(maxTotalOrder * 0.75).toLocaleString()}</span>
+                      <span>{maxTotalOrder.toLocaleString()}</span>
+                    </>
+                  )}
+                </div>
+                <div className="w-16 sm:w-20 flex-shrink-0" />
+              </div>
+            )}
+          </div>
+
+          {/* LEGEND: Baris Horizontal Tunggal & Scrollable di Mobile */}
+          <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700/60">
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 custom-scrollbar text-xs">
+              {STATUS_PRODUKSI_CATEGORIES.map(cat => {
+                const isStatusActive = selectedStatus === cat.id;
+                return (
+                  <button
+                    type="button"
+                    key={cat.id}
+                    onClick={() => {
+                      if (onFilterChange) {
+                        onFilterChange(selectedGroup, isStatusActive ? '' : cat.id);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all flex-shrink-0 cursor-pointer ${
+                      isStatusActive 
+                        ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-bold ring-1 ring-slate-300 dark:ring-slate-600 shadow-sm' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/40'
+                    }`}
+                    title={`Klik untuk filter status: ${cat.label}`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                    <span className="whitespace-nowrap font-medium text-slate-700 dark:text-slate-300">{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Floating Hover Tooltip */}
+          {hoveredSegment && (
+            <div 
+              className="fixed z-50 pointer-events-none transition-opacity duration-100"
+              style={{
+                left: `${Math.min(Math.max(hoveredSegment.clientX, 110), window.innerWidth - 130)}px`,
+                top: `${hoveredSegment.clientY - 12}px`,
+                transform: 'translate(-50%, -100%)'
+              }}
+            >
+              <div className="bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-md px-3.5 py-2.5 rounded-xl shadow-2xl border border-slate-700/60 min-w-[180px] flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-700/60 pb-1.5">
+                  <span className="font-bold text-xs text-slate-200 tracking-wide">{hoveredSegment.group}</span>
+                  <span className="text-[10px] bg-slate-800 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-300 font-mono">
+                    Total: {hoveredSegment.total.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: hoveredSegment.color }} />
+                  <span className="text-xs font-semibold text-slate-100">{hoveredSegment.statusLabel}</span>
+                </div>
+                <div className="flex items-baseline justify-between gap-4 mt-1 pt-1 border-t border-slate-800/60">
+                  <span className="text-xs text-slate-300">
+                    Jumlah Order: <span className="font-extrabold text-white text-sm">{hoveredSegment.count.toLocaleString()}</span>
+                  </span>
+                  <span className="text-xs font-bold text-blue-400">
+                    {hoveredSegment.percentage.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 italic text-right">
+                  {hoveredSegment.percentage.toFixed(1)}% dari total {hoveredSegment.group}
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    });
+
     const AdminDashboard = React.memo(({ data, onRefresh, isLoading, isDarkMode }) => {
       const [filterMonth, setFilterMonth] = useState('');
       const [filterYear, setFilterYear] = useState('');
+      const [dashboardFilterGrp, setDashboardFilterGrp] = useState('');
+      const [dashboardFilterStatus, setDashboardFilterStatus] = useState('');
 
       const availableYears = useMemo(() => {
         const yearsSet = new Set();
@@ -383,7 +938,7 @@
         return years;
       }, [data]);
 
-      const filteredData = useMemo(() => {
+      const filteredDataByDate = useMemo(() => {
         return data.filter(row => {
           if (!row.tanggal) return true;
           const parts = row.tanggal.split('-');
@@ -396,6 +951,13 @@
           return true;
         });
       }, [data, filterMonth, filterYear]);
+
+      const filteredData = useMemo(() => {
+        return filteredDataByDate.filter(row => {
+          if (dashboardFilterGrp && row.group_proses !== dashboardFilterGrp) return false;
+          return true;
+        });
+      }, [filteredDataByDate, dashboardFilterGrp]);
 
       const summary = useMemo(() => {
         let totals = {
@@ -615,6 +1177,39 @@
             </div>
           </div>
 
+          {/* Indikator Filter Segmen Aktif pada Dashboard */}
+          {(dashboardFilterGrp || dashboardFilterStatus) && (
+            <div className="bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/80 px-4 py-3 rounded-2xl flex items-center justify-between text-xs sm:text-sm shadow-sm animate-fadeIn">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-blue-900 dark:text-blue-200">Filter Aktif Dashboard:</span>
+                {dashboardFilterGrp && (
+                  <span className="bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 font-bold px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-700 shadow-sm flex items-center gap-1.5">
+                    Group: {dashboardFilterGrp}
+                    <button type="button" onClick={() => setDashboardFilterGrp('')} className="hover:text-red-500 p-0.5 rounded" title="Hapus filter group">
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </span>
+                )}
+                {dashboardFilterStatus && (
+                  <span className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_PRODUKSI_CATEGORIES.find(c => c.id === dashboardFilterStatus)?.color }} />
+                    Status: {STATUS_PRODUKSI_CATEGORIES.find(c => c.id === dashboardFilterStatus)?.label}
+                    <button type="button" onClick={() => setDashboardFilterStatus('')} className="hover:text-red-500 p-0.5 rounded" title="Hapus filter status">
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </span>
+                )}
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setDashboardFilterGrp(''); setDashboardFilterStatus(''); }}
+                className="text-red-600 dark:text-red-400 hover:underline font-bold flex items-center gap-1 ml-2"
+              >
+                <X size={14} strokeWidth={2.5} /> Reset Filter
+              </button>
+            </div>
+          )}
+
           {filteredData.length === 0 && (
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 p-4 rounded-xl flex items-center gap-3 transition-all">
               <AlertCircle size={20} className="shrink-0 text-amber-600 dark:text-amber-400" />
@@ -692,27 +1287,21 @@
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Komparasi Produksi & Pending per Group</h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Melihat beban kerja dan bottleneck (pending) pada masing-masing grup proses.</p>
-            </div>
-            <div className="h-80 relative w-full">
-              <div className="absolute inset-0">
-                <ResponsiveContainer key={`resp-group-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
-                  <BarChart data={chartDataGroup} margin={{ top: 5, right: 0, bottom: 5, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
-                    <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                    <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} formatter={legendFormatter} />
-                    <Bar dataKey="Produksi" name="Proses Produksi" fill="#3b82f6" radius={[4,4,0,0]} maxBarSize={50} />
-                    <Bar dataKey="Pending" name="Total Pending" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={50} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+          {/* Status Produksi per Group (Horizontal Stacked Bar Chart) */}
+          <StatusProduksiPerGroupChart 
+            data={filteredDataByDate}
+            isDarkMode={isDarkMode}
+            selectedGroup={dashboardFilterGrp}
+            selectedStatus={dashboardFilterStatus}
+            onFilterChange={(grp, st) => {
+              setDashboardFilterGrp(grp);
+              setDashboardFilterStatus(st);
+            }}
+            onResetFilter={() => {
+              setDashboardFilterGrp('');
+              setDashboardFilterStatus('');
+            }}
+          />
         </div>
       );
     });
@@ -768,53 +1357,6 @@
         });
       }, [data, startDate, endDate, filterMonth, filterYear]);
 
-      const chartData = useMemo(() => {
-        const groupsToProcess = filterGrp ? [filterGrp] : GROUP_PROSES;
-        const groups = {};
-        
-        groupsToProcess.forEach(g => {
-          groups[g] = { name: g };
-          STATUS_FIELDS.forEach(f => groups[g][f.id] = 0);
-        });
-
-        filteredRawData.forEach(row => {
-          if (groups[row.group_proses]) {
-            STATUS_FIELDS.forEach(f => {
-              groups[row.group_proses][f.id] += (row[f.id] || 0);
-            });
-          }
-        });
-        
-        return Object.values(groups);
-      }, [filteredRawData, filterGrp]);
-
-      const tooltipBg = isDarkMode ? '#1e293b' : '#ffffff';
-      const tooltipBorder = isDarkMode ? '#334155' : '#e2e8f0';
-      const tooltipText = isDarkMode ? '#f8fafc' : '#0f172a';
-      const axisColor = isDarkMode ? '#94a3b8' : '#64748b';
-      const gridColor = isDarkMode ? '#334155' : '#e2e8f0';
-      const cursorColor = isDarkMode ? '#334155' : '#f8fafc';
-
-      const tooltipStyle = useMemo(() => ({
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        color: tooltipText,
-        borderRadius: '8px', 
-        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-      }), [tooltipBg, tooltipBorder, tooltipText]);
-
-      const tooltipItemStyle = useMemo(() => ({ color: tooltipText }), [tooltipText]);
-
-      const legendFormatter = useCallback((value) => (
-        <span style={{ color: isDarkMode ? '#cbd5e1' : '#334155', fontWeight: 600, fontSize: '12px' }}>
-          {value}
-        </span>
-      ), [isDarkMode]);
-
-      const visibleFields = filterStatus 
-        ? STATUS_FIELDS.filter(f => f.id === filterStatus) 
-        : STATUS_FIELDS;
-
       const resetFilters = () => {
         setFilterGrp('');
         setFilterStatus('');
@@ -825,14 +1367,16 @@
       };
 
       return (
-        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col transition-colors min-h-[500px]">
-          <div className="mb-6 flex flex-col gap-5">
-            <div>
-              <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Summary Status per Group Proses</h2>
-              <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-1">Distribusi akumulatif dari semua status pada tiap-tiap area kerja.</p>
+        <div className="space-y-6 transition-colors duration-300">
+          
+          {/* Filter Bar Atas */}
+          <div className="bg-white dark:bg-slate-800 p-5 md:p-6 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm transition-colors">
+            <div className="flex items-center gap-2 mb-4 text-slate-800 dark:text-slate-100 font-bold text-sm sm:text-base">
+              <Filter size={18} className="text-blue-600 dark:text-blue-400" />
+              <span>Filter Data Status Produksi</span>
             </div>
             
-            <div className="bg-slate-50/80 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-end gap-3 lg:gap-4 transition-colors">
+            <div className="flex flex-wrap items-end gap-3 lg:gap-4">
               
               {/* Filter Bulan */}
               <div className="flex flex-col">
@@ -848,7 +1392,7 @@
                         setEndDate('');
                       }
                     }} 
-                    className="w-[135px] sm:w-[145px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
+                    className="w-[135px] sm:w-[145px] pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
                   >
                     <option value="">Semua Bulan</option>
                     {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -870,7 +1414,7 @@
                         setEndDate('');
                       }
                     }} 
-                    className="w-[110px] sm:w-[120px] px-3 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
+                    className="w-[110px] sm:w-[120px] px-3 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer"
                   >
                     <option value="">Semua Tahun</option>
                     {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -884,10 +1428,10 @@
                 <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Rentang Tanggal</label>
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
-                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
+                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                   <span className="text-slate-400 font-bold">-</span>
                   <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); if(e.target.value) { setFilterMonth(''); setFilterYear(''); } }} 
-                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
+                         className="w-[125px] sm:w-[135px] px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 transition-all shadow-sm" />
                 </div>
               </div>
 
@@ -897,7 +1441,7 @@
                 <div className="relative">
                   <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
                   <select value={filterGrp} onChange={e => setFilterGrp(e.target.value)} 
-                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
+                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
                     <option value="">Semua Group</option>
                     {GROUP_PROSES.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
@@ -911,9 +1455,9 @@
                 <div className="relative">
                   <Activity className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={14} />
                   <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} 
-                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
+                          className="w-[140px] sm:w-[155px] pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 dark:text-slate-200 appearance-none transition-all shadow-sm cursor-pointer">
                     <option value="">Semua Status</option>
-                    {STATUS_FIELDS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    {STATUS_PRODUKSI_CATEGORIES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                   </select>
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                 </div>
@@ -922,7 +1466,7 @@
               {/* Tombol Control */}
               <div className="flex gap-2 w-full sm:w-auto ml-auto mt-2 xl:mt-0">
                 <button onClick={resetFilters} 
-                        className="flex-1 sm:flex-none px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-slate-600 dark:hover:text-red-400 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm focus:ring-2 focus:ring-slate-200 active:scale-95" title="Reset Filter">
+                        className="flex-1 sm:flex-none px-4 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-slate-600 dark:hover:text-red-400 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm focus:ring-2 focus:ring-slate-200 active:scale-95" title="Reset Filter">
                   <X size={14} strokeWidth={3} /> Reset
                 </button>
                 
@@ -934,33 +1478,18 @@
             </div>
           </div>
           
-          <div className="flex-1 min-h-[400px] relative w-full mt-2">
-            <div className="absolute inset-0">
-              <ResponsiveContainer key={`resp-status-${isDarkMode ? 'dark' : 'light'}`} width="100%" height="100%" debounce={50}>
-                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} dy={15} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: axisColor}} />
-                  <RechartsTooltip cursor={{fill: isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(241, 245, 249, 0.6)'}} contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} />
-                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '30px' }} formatter={legendFormatter} />
-                  
-                  {visibleFields.map((field) => {
-                    const colorIndex = STATUS_FIELDS.findIndex(f => f.id === field.id);
-                    return (
-                      <Bar 
-                        key={field.id} 
-                        dataKey={field.id} 
-                        name={field.label} 
-                        stackId="a" 
-                        fill={COLORS[colorIndex % COLORS.length]} 
-                        maxBarSize={60}
-                      />
-                    );
-                  })}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Horizontal Stacked Bar Chart */}
+          <StatusProduksiPerGroupChart 
+            data={filteredRawData}
+            isDarkMode={isDarkMode}
+            selectedGroup={filterGrp}
+            selectedStatus={filterStatus}
+            onFilterChange={(grp, st) => {
+              setFilterGrp(grp);
+              setFilterStatus(st);
+            }}
+            onResetFilter={resetFilters}
+          />
         </div>
       );
     });
