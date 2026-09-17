@@ -918,13 +918,20 @@
     });
 
     const AdminDashboard = React.memo(({ data, onRefresh, isLoading, isDarkMode }) => {
-      const [filterMonth, setFilterMonth] = useState('');
-      const [filterYear, setFilterYear] = useState('');
+      const now = new Date();
+      const currentYearStr = now.getFullYear().toString();
+      const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
+      const currentMonthObj = MONTHS.find(m => m.value === currentMonthStr);
+      const currentMonthName = currentMonthObj ? currentMonthObj.label : '';
+
+      const [filterMonth, setFilterMonth] = useState(currentMonthStr);
+      const [filterYear, setFilterYear] = useState(currentYearStr);
       const [dashboardFilterGrp, setDashboardFilterGrp] = useState('');
       const [dashboardFilterStatus, setDashboardFilterStatus] = useState('');
 
       const availableYears = useMemo(() => {
         const yearsSet = new Set();
+        yearsSet.add(currentYearStr);
         data.forEach(row => {
           if (row.tanggal) {
             const year = row.tanggal.split('-')[0];
@@ -932,22 +939,22 @@
           }
         });
         const years = Array.from(yearsSet).sort((a, b) => b - a);
-        if (years.length === 0) {
-          years.push(new Date().getFullYear().toString());
-        }
         return years;
-      }, [data]);
+      }, [data, currentYearStr]);
 
       const filteredDataByDate = useMemo(() => {
         return data.filter(row => {
-          if (!row.tanggal) return true;
-          const parts = row.tanggal.split('-');
-          const year = parts[0];
-          const month = parts[1];
+          if (filterYear || filterMonth) {
+            if (!row.tanggal) return false;
+            const parts = row.tanggal.split('-');
+            const year = parts[0];
+            const month = parts[1];
 
-          if (filterYear && year !== filterYear) return false;
-          if (filterMonth && month !== filterMonth) return false;
+            if (filterYear && year !== filterYear) return false;
+            if (filterMonth && month !== filterMonth) return false;
 
+            return true;
+          }
           return true;
         });
       }, [data, filterMonth, filterYear]);
@@ -988,16 +995,10 @@
         return Object.values(groups);
       }, [filteredData]);
 
-      const now = new Date();
-      const currentYearStr = now.getFullYear().toString();
-      const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
-      const currentMonthObj = MONTHS.find(m => m.value === currentMonthStr);
-      const currentMonthName = currentMonthObj ? currentMonthObj.label : '';
-
       const chartDataTrend = useMemo(() => {
         let trendSource = filteredData;
 
-        // Tanpa filter: Tampilkan HANYA data bulan berjalan (current month)
+        // Tanpa filter: Tampilkan HANYA data bulan berjalan (current month) jika ada data
         if (!filterMonth && !filterYear) {
           trendSource = data.filter(row => {
             if (!row.tanggal) return false;
@@ -1143,12 +1144,26 @@
                 />
               </div>
 
+              {(filterMonth !== currentMonthStr || filterYear !== currentYearStr) && (
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setFilterMonth(currentMonthStr);
+                    setFilterYear(currentYearStr);
+                  }}
+                  className="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                  title="Kembalikan ke Bulan Berjalan"
+                >
+                  <Calendar size={14} strokeWidth={2.5} /> Bulan Ini
+                </button>
+              )}
+
               {(filterMonth || filterYear) && (
                 <button 
                   type="button"
                   onClick={resetFilters}
                   className="px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
-                  title="Reset Filter Bulan"
+                  title="Reset Filter (Semua Periode)"
                 >
                   <X size={14} strokeWidth={2.5} /> Reset
                 </button>
@@ -1232,7 +1247,7 @@
             <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex flex-col transition-colors">
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  Tren Produksi & Kemas {(!filterMonth && !filterYear) ? `(Bulan Berjalan - ${currentMonthName} ${currentYearStr})` : `(${filterActiveText})`}
+                  Tren Produksi & Kemas ({filterActiveText})
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400">Perbandingan total barang diproses dan selesai dikemas per hari.</p>
               </div>
