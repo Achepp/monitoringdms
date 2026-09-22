@@ -110,6 +110,15 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzfqf9QKzH-OUMX5RIJ-Nzy54DXmO9lNowKXXxxRDgf1XSbk8jGCvAyPddOGwC-t1ks/exec"; 
 
     const GROUP_PROSES = ["Aerosol", "Epoxy", "Melamine", "Politur", "Thinner", "Waterbased", "Wood filler", "Utility"];
+    const canonicalGroup = (name) => {
+      if (!name) return '';
+      const trimmed = String(name).trim();
+      const matched = GROUP_PROSES.find(g => 
+        g.toLowerCase() === trimmed.toLowerCase() || 
+        g.toLowerCase().replace(/\s+/g, '') === trimmed.toLowerCase().replace(/\s+/g, '')
+      );
+      return matched || trimmed;
+    };
     const SHIFTS = ["Pagi", "Siang"];
     const MONTHS = [
       { value: '01', label: 'Januari' },
@@ -250,6 +259,7 @@
           return {
             ...row,
             tanggal: normalizedTanggal,
+            group_proses: canonicalGroup(row.group_proses),
             pending_produksi: pendingProdVal,
             pending_proses: pendingProdVal,
             tk: tkVal,
@@ -428,8 +438,9 @@
         // Collect all available groups from GROUP_PROSES and data
         const allGroupsSet = new Set(GROUP_PROSES);
         data.forEach(row => {
-          if (row.group_proses && String(row.group_proses).trim()) {
-            allGroupsSet.add(String(row.group_proses).trim());
+          const grp = canonicalGroup(row.group_proses);
+          if (grp) {
+            allGroupsSet.add(grp);
           }
         });
         const allGroups = Array.from(allGroupsSet);
@@ -441,7 +452,7 @@
           });
 
           data.forEach(row => {
-            if (row.group_proses === groupName) {
+            if (canonicalGroup(row.group_proses) === groupName) {
               STATUS_PRODUKSI_CATEGORIES.forEach(cat => {
                 counts[cat.id] += Number(row[cat.id] || 0);
               });
@@ -744,10 +755,15 @@
                           else if (seg.isLast) roundedClass = 'rounded-r-lg';
 
                           // Angka di dalam segmen hanya muncul jika cukup lebar
-                          const displayPercentage = seg.percentage;
-                          const isWideEnough = viewMode === 'percentage' 
-                            ? displayPercentage >= 6.5 
-                            : (displayPercentage >= 7.5 && (group.totalOrder / maxTotalOrder) >= 0.22);
+                          const barWidthPct = viewMode === 'percentage' 
+                            ? 100 
+                            : Math.max((group.totalOrder / maxTotalOrder) * 100, group.totalOrder > 0 ? 6 : 0);
+                          const actualSegmentPct = (barWidthPct * seg.percentage) / 100;
+                          
+                          const minPct = viewMode === 'percentage' 
+                            ? (seg.percentage < 10 ? 3.5 : 5.0) 
+                            : (seg.count < 10 ? 1.4 : (seg.count < 100 ? 1.8 : 2.4));
+                          const isWideEnough = actualSegmentPct >= minPct;
 
                           return (
                             <div
@@ -779,12 +795,13 @@
                               }`}
                               style={{
                                 width: `${seg.percentage}%`,
+                                minWidth: seg.count > 0 ? '4px' : undefined,
                                 backgroundColor: seg.color
                               }}
                               title={`${group.name} - ${seg.label}: ${seg.count} order (${seg.percentage.toFixed(1)}%)`}
                             >
                               {isWideEnough && (
-                                <span className="text-[10px] sm:text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] px-1 truncate pointer-events-none">
+                                <span className="text-[10px] sm:text-xs font-bold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] px-0.5 sm:px-1 truncate pointer-events-none">
                                   {viewMode === 'percentage' ? `${Math.round(seg.percentage)}%` : seg.count}
                                 </span>
                               )}
